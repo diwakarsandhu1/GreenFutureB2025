@@ -1,0 +1,36 @@
+/* Reset some default browser styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: Arial, sans-serif; /* Use your preferred font */
+  background-color: #f4f4f4; /* Light background color */
+  color: #333; /* Text color */
+  line-height: 1.6; /* Improve text readability */
+}
+
+/* Center align the main container */
+#root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px; /* Padding around the content */
+}
+
+/* Add some margin to the form */
+form {
+  margin: 20px 0;
+}
+
+/* Button styles */
+button {
+  background-color: #84c226; /* Tailwind equivalent: bg-lime-500 */
+  color: #fff; /* Text color */
+  border: none;
+  padding: 10px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+}

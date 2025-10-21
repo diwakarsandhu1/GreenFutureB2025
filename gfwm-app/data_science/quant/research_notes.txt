@@ -1,0 +1,44 @@
+10/25
+
+equal weights
+markowitz no short to see what happens
+add upper bound to each weight
+
+exp weighted moving average of volatility
+
+garch model for volatility modeling
+
+covered calls
+short term atm options to model volatility
+
+bloomberg terminal - stratton hall 4th floor
+
+11/8
+
+risk free is post markowitz
+frontier as given, tangent line
+    
+finding tangent line algorithm
+
+weights backed out of https://investor.vanguard.com/investment-products/list/all?strategy=all_in_one 
+
+11/18 andrew feedback
+sp volatility to compare
+number of stocks in top 90%
+
+
+11/20
+
+different risk measures
+
+lower downside semi variance
+instead of averaging x-xbar, only include if x < xbar
+
+
+11/30
+
+compare apples to apples, ie sp500 benchmark should include same cash percent as portfolio
+when adding the bond fund, compare (esg stocks - esg bond - cash) to (sp500 - regular bonds - cash)
+also have toggle to switch between market cap sp500 and equal weight sp500
+make risk slider give both esg and benchmark portfolio the same cash / bond allocation
+    also be able to adjust while editing portfolio content

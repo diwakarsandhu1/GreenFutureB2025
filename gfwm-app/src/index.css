@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
+    monospace;
+}
+
+/* Slider thumb styling */
+.slider-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none; /* Remove default thumb styling */
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%; /* Circular thumb */
+  background: #3e7738; /* Darker green */
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.slider-thumb::-webkit-slider-thumb:hover {
+  background: #064e3b; /* Even darker green on hover */
+}
+
+.slider-thumb::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3e7738; /* Darker green */
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.slider-thumb::-moz-range-thumb:hover {
+  background: #064e3b;
+}
+
+.slider-thumb::-ms-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3e7738; /* Darker green */
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.slider-thumb::-ms-thumb:hover {
+  background: #064e3b;
+}
