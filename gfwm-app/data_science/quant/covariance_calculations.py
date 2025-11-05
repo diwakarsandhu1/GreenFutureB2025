@@ -1,303 +1,341 @@
-"""
-covariance_calculations.py
-
-Risk model layer:
-    - builds raw (sample) covariance
-    - builds shrunk + PSD covariance via Ledoit–Wolf
-    - OPTIONAL: can apply downside-weighting to returns before covariance
-    - saves matrices into generated_data/ for Markowitz, Michaud, MC, ESG
-
-Assumptions:
-    - inputs are DAILY log-returns (not annualized)
-    - covariances are also in daily units
-    - annualization (×252, ×sqrt(252)) is done downstream (Markowitz/reporting)
-"""
-
-from __future__ import annotations
+import os
+import warnings
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import Tuple, Dict, Any
-
 from sklearn.covariance import LedoitWolf
-import warnings
-
-# All generated artifacts live here (folder already exists)
-GENERATED_DIR = Path(__file__).resolve().parent / "generated_data"
-
-# Default input returns file produced by preprocessing.py
-DEFAULT_RETURNS_PATH = GENERATED_DIR / "sp500_timeseries_13-24.csv"
 
 
 # -----------------------------------------------------------------------------
-# OPTIONAL: downside-weighting of returns (non-standard, experimental)
+# Paths / constants
 # -----------------------------------------------------------------------------
-def apply_downside_weighting(
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DEFAULT_RETURNS_PATH = os.path.join(
+    BASE_DIR, "generated_data", "sp500_timeseries_13-24.csv"
+)
+DEFAULT_RAW_COV_PATH = os.path.join(
+    BASE_DIR, "generated_data", "sp500_raw_cov_matrix.csv"
+)
+DEFAULT_ADJ_COV_PATH = os.path.join(
+    BASE_DIR, "generated_data", "sp500_adjusted_cov_matrix.csv"
+)
+
+# Toggle if you want downside weighting baked into Σ
+USE_DOWNSIDE_WEIGHTING = False
+
+
+# -----------------------------------------------------------------------------
+# Loading helpers
+# -----------------------------------------------------------------------------
+
+def load_returns_panel(path: Optional[str] = None) -> pd.DataFrame:
+    """
+    Load the canonical returns panel (daily log returns, dates × tickers).
+
+    By default, reads from generated_data/sp500_timeseries_13-24.csv as
+    produced by preprocessing.py::build_and_save_core_data.
+    """
+    if path is None:
+        path = DEFAULT_RETURNS_PATH
+
+    print(f"[INFO] Loading returns panel from: {path}")
+    returns = pd.read_csv(path, index_col=0, parse_dates=True)
+
+    # Ensure sorted by date
+    returns = returns.sort_index()
+
+    # Make sure everything is numeric (coerce any stray strings to NaN)
+    returns = returns.apply(pd.to_numeric, errors="coerce")
+
+    print(f"[INFO] Loaded returns panel with shape: {returns.shape}")
+    return returns
+
+
+# -----------------------------------------------------------------------------
+# Optional downside weighting
+# -----------------------------------------------------------------------------
+
+def get_downside_weighted_returns(returns_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply a simple heuristic tilt:
+      - Down days (r <= 0) are scaled up by 1.1
+      - Up days (r > 0) are scaled down by 0.9
+
+    This is not industry standard, but matches your previous logic and
+    can be toggled with USE_DOWNSIDE_WEIGHTING.
+    """
+    weighted = returns_df.copy()
+
+    # r <= 0  →  1.1 * r
+    mask_down = weighted <= 0
+    weighted[mask_down] = weighted[mask_down] * 1.1
+
+    # r > 0   →  0.9 * r
+    mask_up = weighted > 0
+    weighted[mask_up] = weighted[mask_up] * 0.9
+
+    return weighted
+
+
+# -----------------------------------------------------------------------------
+# Hybrid NaN cleaning for covariance
+# -----------------------------------------------------------------------------
+
+def prepare_returns_for_covariance(
     returns_df: pd.DataFrame,
-    down_weight: float = 1.1,
-    up_weight: float = 0.9,
+    min_ticker_coverage: float = 0.80,
+    min_day_coverage: float = 0.95,
+    fill_limit: int = 5,
 ) -> pd.DataFrame:
     """
-    Optional pre-processing step that emphasizes downside moves.
+    Hybrid cleaning for covariance estimation:
 
-    For each return r:
-        if r <= 0: r' = r * down_weight
-        else:      r' = r * up_weight
+    1) Drop sparse tickers (low coverage across time).
+    2) Lightly fill short gaps forward/backward per ticker.
+    3) Drop sparse days (low cross-sectional coverage).
+    4) Drop any remaining rows with NaNs.
 
-    This is NOT industry standard. It's a behavioral/experimental tweak that
-    makes negative returns count more in the covariance and positive returns
-    count slightly less. We keep it available for experiments, but DO NOT
-    enable it by default in the main pipeline.
+    This avoids Ledoit–Wolf dropping the majority of rows while still
+    ensuring a dense, well-behaved matrix.
+
+    Parameters
+    ----------
+    returns_df : DataFrame
+        Daily log returns (dates × tickers).
+    min_ticker_coverage : float
+        Minimum fraction of days a ticker must have non-NaN data to be kept.
+    min_day_coverage : float
+        Minimum fraction of tickers a given day must have non-NaN data to be kept.
+    fill_limit : int
+        Max number of consecutive NaNs to forward/backward fill. Longer gaps remain NaN.
+
+    Returns
+    -------
+    DataFrame
+        Cleaned returns matrix suitable for covariance estimation.
     """
-    scaled = np.where(returns_df <= 0, returns_df * down_weight, returns_df * up_weight)
-    return pd.DataFrame(scaled, index=returns_df.index, columns=returns_df.columns)
+    returns = returns_df.copy()
+
+    # 1) Drop tickers with too little data
+    ticker_cov = returns.notna().mean(axis=0)  # fraction of valid days per ticker
+    good_tickers = ticker_cov[ticker_cov >= min_ticker_coverage].index
+    n_dropped_tickers = returns.shape[1] - len(good_tickers)
+    if n_dropped_tickers > 0:
+        print(
+            f"[CLEAN] Dropped {n_dropped_tickers} tickers "
+            f"with coverage < {min_ticker_coverage:.0%}"
+        )
+    returns = returns[good_tickers]
+
+    # 2) Lightly fill short gaps in time (forward then backward)
+    if fill_limit is not None and fill_limit > 0:
+        returns = returns.ffill(limit=fill_limit).bfill(limit=fill_limit)
+
+    # 3) Drop days where too many tickers are missing
+    day_cov = returns.notna().mean(axis=1)  # fraction of valid tickers per day
+    good_days = day_cov[day_cov >= min_day_coverage].index
+    n_dropped_days = returns.shape[0] - len(good_days)
+    if n_dropped_days > 0:
+        print(
+            f"[CLEAN] Dropped {n_dropped_days} days "
+            f"with cross-sectional coverage < {min_day_coverage:.0%}"
+        )
+    returns = returns.loc[good_days]
+
+    # 4) Final drop of any residual NaN rows
+    before_rows = returns.shape[0]
+    returns = returns.dropna(axis=0, how="any")
+    n_dropped_final = before_rows - returns.shape[0]
+    if n_dropped_final > 0:
+        print(f"[CLEAN] Dropped {n_dropped_final} rows with remaining NaNs.")
+
+    print(
+        f"[CLEAN] Final returns matrix for covariance: "
+        f"{returns.shape[0]} days × {returns.shape[1]} tickers."
+    )
+
+    return returns
 
 
 # -----------------------------------------------------------------------------
-# Core estimators
+# Diagnostics
 # -----------------------------------------------------------------------------
-def estimate_sample_covariance(returns_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Estimate the sample covariance matrix Σ_raw from daily log returns.
 
-    This is your "realized risk" estimate: no shrinkage, no clipping.
-    It is often too noisy for portfolio optimization in large universes,
-    but it's excellent for diagnostics and for comparing against the shrunk
-    covariance.
+def covariance_diagnostics(
+    cov: pd.DataFrame | np.ndarray,
+    name: str = "Σ",
+) -> Tuple[float, float, float]:
     """
-    cov = returns_df.cov()  # pairwise complete observations, ddof=1
+    Print simple diagnostics (min eigenvalue, max eigenvalue, condition number)
+    for a covariance matrix.
+    """
+    if isinstance(cov, pd.DataFrame):
+        mat = cov.values
+    else:
+        mat = np.asarray(cov)
+
+    eigvals = np.linalg.eigvalsh(mat)
+    min_eig = float(eigvals.min())
+    max_eig = float(eigvals.max())
+    if min_eig == 0:
+        cond = np.inf
+    else:
+        cond = max_eig / min_eig
+
+    print(f"[Diagnostics: {name}]")
+    print(f"  min eigenvalue   : {min_eig: .4e}")
+    print(f"  max eigenvalue   : {max_eig: .4e}")
+    print(f"  condition number : {cond: .4e}")
+    return min_eig, max_eig, cond
+
+
+# -----------------------------------------------------------------------------
+# Covariance estimation
+# -----------------------------------------------------------------------------
+
+def estimate_sample_covariance(
+    returns_df: pd.DataFrame,
+    use_downside_weighting: bool = False,
+    min_ticker_coverage: float = 0.80,
+    min_day_coverage: float = 0.95,
+    fill_limit: int = 5,
+) -> pd.DataFrame:
+    """
+    Estimate sample covariance on a hybrid-cleaned returns matrix.
+    Optionally apply downside weighting before cleaning.
+    """
+    returns = returns_df.copy()
+
+    if use_downside_weighting:
+        print("[INFO] Applying downside weighting to returns before sample covariance.")
+        returns = get_downside_weighted_returns(returns)
+
+    # Hybrid NaN cleaning
+    returns_clean = prepare_returns_for_covariance(
+        returns,
+        min_ticker_coverage=min_ticker_coverage,
+        min_day_coverage=min_day_coverage,
+        fill_limit=fill_limit,
+    )
+
+    cov = returns_clean.cov()
     return cov
 
 
 def estimate_shrunk_covariance_lw(
     returns_df: pd.DataFrame,
     epsilon: float = 1e-8,
-    min_obs: int = 250,
+    use_downside_weighting: bool = False,
+    min_ticker_coverage: float = 0.80,
+    min_day_coverage: float = 0.95,
+    fill_limit: int = 5,
 ) -> pd.DataFrame:
     """
-    Estimate a shrunk, PSD covariance matrix Σ_LW+PSD using Ledoit–Wolf.
+    Estimate Ledoit–Wolf shrunk covariance with PSD eigenvalue clipping.
 
     Steps:
-        1. Drop any rows with NaNs to enforce a common data window.
-        2. Fit Ledoit–Wolf on the cleaned returns (rows = days, cols = tickers).
-        3. Extract Σ_shrunk from the estimator.
-        4. Eigen-decompose Σ_shrunk = V Λ Vᵀ.
-        5. Clip small/negative eigenvalues at epsilon: λ_i := max(λ_i, epsilon).
-        6. Reconstruct Σ_psd = V diag(λ_clipped) Vᵀ.
-
-    The result is numerically stable and positive semidefinite, which is
-    exactly what Markowitz, Michaud, and MC simulations need.
+      1. Optional downside weighting.
+      2. Hybrid NaN cleaning for a dense returns matrix.
+      3. Ledoit–Wolf shrinkage on the cleaned matrix.
+      4. Eigen-decomposition and eigenvalue clipping to enforce PSD.
+      5. Reconstruct a DataFrame with ticker labels.
     """
-    # 1) Drop rows with any NaNs — common window across assets for LW
-    n_rows_before = returns_df.shape[0]
-    clean_df = returns_df.dropna(axis=0, how="any")
-    n_rows_after = clean_df.shape[0]
+    returns = returns_df.copy()
 
-    if n_rows_after < n_rows_before:
-        frac_dropped = (n_rows_before - n_rows_after) / max(n_rows_before, 1)
-        warnings.warn(
-            f"[LW] Dropped {n_rows_before - n_rows_after} rows with NaNs "
-            f"({frac_dropped:.1%} of observations) before Ledoit–Wolf."
-        )
-
-    if n_rows_after < min_obs:
-        warnings.warn(
-            f"[LW] Only {n_rows_after} clean observations left after dropna; "
-            f"this is below min_obs={min_obs}. Covariance estimates may be noisy."
-        )
-
-    if n_rows_after == 0:
-        raise ValueError(
-            "[LW] No observations left after dropping NaN rows. "
-            "Check preprocessing / data coverage."
-        )
-
-    X = clean_df.values  # shape (n_samples, n_assets)
-
-    # 2) Ledoit–Wolf shrinkage
-    lw = LedoitWolf().fit(X)
-    sigma_shrunk = lw.covariance_  # numpy array, shape (n_assets, n_assets)
-
-    # 3–6) Eigen-decomposition and PSD repair
-    eigvals, eigvecs = np.linalg.eigh(sigma_shrunk)
-    eigvals_clipped = np.clip(eigvals, epsilon, None)
-    sigma_psd = (eigvecs * eigvals_clipped) @ eigvecs.T
-
-    tickers = list(returns_df.columns)
-    sigma_psd_df = pd.DataFrame(sigma_psd, index=tickers, columns=tickers)
-
-    # Sanity check: no NaNs or infs
-    if not np.isfinite(sigma_psd_df.values).all():
-        raise ValueError("[LW] Non-finite values found in shrunk covariance matrix.")
-
-    return sigma_psd_df
-
-
-def covariance_diagnostics(
-    cov_matrix: pd.DataFrame,
-    name: str = "covariance",
-) -> Dict[str, Any]:
-    """
-    Compute simple diagnostics for a covariance matrix:
-        - min eigenvalue
-        - max eigenvalue
-        - condition number (max / min)
-
-    Returns a dict of metrics and prints them. This is extremely helpful
-    for debugging and for ensuring Σ is well-conditioned before optimization.
-    """
-    S = cov_matrix.values
-    eigvals = np.linalg.eigvalsh(S)
-
-    min_eig = float(eigvals.min())
-    max_eig = float(eigvals.max())
-    cond_num = float(max_eig / max(min_eig, 1e-16))  # avoid div-by-zero
-
-    info = {
-        "name": name,
-        "min_eigenvalue": min_eig,
-        "max_eigenvalue": max_eig,
-        "condition_number": cond_num,
-    }
-
-    print(f"[Diagnostics: {name}]")
-    print(f"  min eigenvalue    : {min_eig:.4e}")
-    print(f"  max eigenvalue    : {max_eig:.4e}")
-    print(f"  condition number  : {cond_num:.4e}")
-    print()
-
-    return info
-
-
-# -----------------------------------------------------------------------------
-# Build-and-save wrapper
-# -----------------------------------------------------------------------------
-def build_and_save_covariance_matrices(
-    returns_df: pd.DataFrame,
-    out_dir: Path | str = GENERATED_DIR,
-    use_downside_weighting: bool = False,
-    epsilon: float = 1e-8,
-    min_obs: int = 250,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    High-level ETL wrapper for the risk model layer.
-
-    Inputs:
-        returns_df : daily log return panel from preprocessing.py
-                     (index = dates, columns = tickers)
-        out_dir    : where to save the resulting CSVs
-        use_downside_weighting :
-                     if True, first apply apply_downside_weighting() to returns
-                     before any covariance estimation. By default this is False
-                     to match industry-standard practice.
-        epsilon    : eigenvalue floor for PSD clipping in Σ_LW+PSD.
-        min_obs    : minimum number of clean observations (rows) after dropna
-                     before LW; below this, a warning is issued.
-
-    Outputs (also saved to CSV in `out_dir`):
-        sp500_raw_cov_matrix.csv     : sample covariance Σ_raw
-        sp500_adjusted_cov_matrix.csv: shrunk + PSD covariance Σ_LW+PSD
-
-    Returns:
-        (cov_raw_df, cov_psd_df)
-    """
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Optional: downside-weighting experiment
     if use_downside_weighting:
         print("[INFO] Applying downside weighting to returns before covariance.")
-        returns_for_cov = apply_downside_weighting(returns_df)
-    else:
-        returns_for_cov = returns_df
+        returns = get_downside_weighted_returns(returns)
 
-    # 1) Sample covariance (raw)
-    cov_raw_df = estimate_sample_covariance(returns_for_cov)
-    covariance_diagnostics(cov_raw_df, name="Σ_raw (sample)")
-
-    if not np.isfinite(cov_raw_df.values).all():
-        raise ValueError("Non-finite values in sample covariance matrix Σ_raw.")
-
-    raw_path = out_dir / "sp500_raw_cov_matrix.csv"
-    cov_raw_df.to_csv(raw_path, index=True)
-    print(f"[INFO] Saved raw covariance to: {raw_path}")
-
-    # 2) Shrunk + PSD covariance via Ledoit–Wolf
-    cov_psd_df = estimate_shrunk_covariance_lw(
-        returns_for_cov,
-        epsilon=epsilon,
-        min_obs=min_obs,
+    # Hybrid NaN cleaning
+    returns_clean = prepare_returns_for_covariance(
+        returns,
+        min_ticker_coverage=min_ticker_coverage,
+        min_day_coverage=min_day_coverage,
+        fill_limit=fill_limit,
     )
-    covariance_diagnostics(cov_psd_df, name="Σ_LW+PSD (shrunk)")
 
-    adj_path = out_dir / "sp500_adjusted_cov_matrix.csv"
-    cov_psd_df.to_csv(adj_path, index=True)
-    print(f"[INFO] Saved adjusted (shrunk + PSD) covariance to: {adj_path}")
+    # Ledoit–Wolf on cleaned data
+    lw = LedoitWolf().fit(returns_clean.values)
+    Sigma_shrunk = lw.covariance_
+    tickers = returns_clean.columns.to_list()
 
-    return cov_raw_df, cov_psd_df
+    # Eigen-decomposition + clipping for PSD
+    eigvals, eigvecs = np.linalg.eigh(Sigma_shrunk)
+    min_eig_before = float(eigvals.min())
+    if min_eig_before < 0:
+        print(
+            f"[INFO] LW covariance had negative eigenvalues "
+            f"(min = {min_eig_before:.3e}); clipping to {epsilon:.1e}."
+        )
+    eigvals_clipped = np.clip(eigvals, epsilon, None)
+    Sigma_psd = (eigvecs * eigvals_clipped) @ eigvecs.T
 
-
-# -----------------------------------------------------------------------------
-# Loader helpers so other modules don't hard-code file paths
-# -----------------------------------------------------------------------------
-def load_returns_panel(
-    filepath: Path | str = DEFAULT_RETURNS_PATH,
-) -> pd.DataFrame:
-    """
-    Load the returns panel produced by preprocessing.py.
-
-    This is the canonical daily log returns DataFrame that all covariances,
-    optimizations, and simulations should be based on.
-    """
-    filepath = Path(filepath)
-    df = pd.read_csv(filepath, index_col=0, parse_dates=True)
-    return df
-
-
-def load_raw_covariance(
-    filepath: Path | str = GENERATED_DIR / "sp500_raw_cov_matrix.csv",
-) -> pd.DataFrame:
-    """
-    Load the sample covariance matrix Σ_raw from CSV.
-    """
-    filepath = Path(filepath)
-    df = pd.read_csv(filepath, index_col=0)
-    return df
-
-
-def load_adjusted_covariance(
-    filepath: Path | str = GENERATED_DIR / "sp500_adjusted_cov_matrix.csv",
-) -> pd.DataFrame:
-    """
-    Load the shrunk + PSD covariance matrix Σ_LW+PSD from CSV.
-    This is the matrix you should use as the risk model for Markowitz,
-    Michaud, Monte Carlo, and ESG-aware optimizations.
-    """
-    filepath = Path(filepath)
-    df = pd.read_csv(filepath, index_col=0)
-    return df
+    # Wrap back into a DataFrame with proper labels
+    cov_df = pd.DataFrame(Sigma_psd, index=tickers, columns=tickers)
+    return cov_df
 
 
 # -----------------------------------------------------------------------------
-# CLI / script entrypoint (optional)
+# High-level ETL: build & save covariance matrices
 # -----------------------------------------------------------------------------
-if __name__ == "__main__":
-    """
-    If you run this file directly, it will:
-        1. Load the canonical returns panel from generated_data/sp500_timeseries_13-24.csv
-        2. Build Σ_raw and Σ_LW+PSD
-        3. Save both into generated_data/
-    """
-    print("[INFO] Loading returns panel from default path...")
-    returns = load_returns_panel(DEFAULT_RETURNS_PATH)
-    print(f"[INFO] Loaded returns panel with shape: {returns.shape}")
 
-    build_and_save_covariance_matrices(
-        returns_df=returns,
-        out_dir=GENERATED_DIR,
-        use_downside_weighting=False,  # toggle to True ONLY for experiments
-        epsilon=1e-8,
-        min_obs=250,
+def build_and_save_covariance_matrices(
+    returns_path: Optional[str] = None,
+    out_raw_path: Optional[str] = None,
+    out_adj_path: Optional[str] = None,
+    use_downside_weighting: bool = USE_DOWNSIDE_WEIGHTING,
+) -> None:
+    """
+    High-level routine:
+
+      1. Load returns panel.
+      2. Build sample covariance Σ_raw (hybrid-cleaned).
+      3. Build shrunk + PSD covariance Σ_LW+PSD.
+      4. Run diagnostics on both.
+      5. Save to CSV in generated_data/.
+    """
+    # Paths
+    if returns_path is None:
+        returns_path = DEFAULT_RETURNS_PATH
+    if out_raw_path is None:
+        out_raw_path = DEFAULT_RAW_COV_PATH
+    if out_adj_path is None:
+        out_adj_path = DEFAULT_ADJ_COV_PATH
+
+    # 1) Load returns
+    returns_df = load_returns_panel(returns_path)
+
+    # 2) Sample covariance (raw)
+    Sigma_raw = estimate_sample_covariance(
+        returns_df,
+        use_downside_weighting=use_downside_weighting,
     )
+    covariance_diagnostics(Sigma_raw, name="Σ_raw (sample)")
+
+    # Save raw
+    Sigma_raw.to_csv(out_raw_path, index=True)
+    print(f"[INFO] Saved raw covariance to: {out_raw_path}")
+
+    # 3) Ledoit–Wolf + PSD covariance (adjusted)
+    Sigma_adj = estimate_shrunk_covariance_lw(
+        returns_df,
+        use_downside_weighting=use_downside_weighting,
+    )
+    covariance_diagnostics(Sigma_adj, name="Σ_LW+PSD (shrunk)")
+
+    # Save adjusted
+    Sigma_adj.to_csv(out_adj_path, index=True)
+    print(f"[INFO] Saved adjusted (shrunk + PSD) covariance to: {out_adj_path}")
+
     print("[INFO] Covariance matrices built and saved.")
+
+
+# -----------------------------------------------------------------------------
+# CLI entrypoint
+# -----------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    build_and_save_covariance_matrices()
