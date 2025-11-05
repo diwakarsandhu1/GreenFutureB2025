@@ -6,6 +6,9 @@ import numpy as np
 import pandas as pd
 from sklearn.covariance import LedoitWolf
 
+from pathlib import Path
+from .preprocessing import ensure_preprocessing_artifacts, load_returns_panel
+
 
 # -----------------------------------------------------------------------------
 # Paths / constants
@@ -331,6 +334,34 @@ def build_and_save_covariance_matrices(
     print(f"[INFO] Saved adjusted (shrunk + PSD) covariance to: {out_adj_path}")
 
     print("[INFO] Covariance matrices built and saved.")
+
+def ensure_covariance_artifacts():
+    """
+    Check for covariance matrices and rebuild them if missing.
+    Depends on preprocessing artifacts being present.
+    """
+    this_dir = Path(__file__).resolve().parent  # .../data_science/quant
+    generated = this_dir / "generated_data"
+    generated.mkdir(parents=True, exist_ok=True)
+
+    required = [
+        generated / "sp500_raw_cov_matrix.csv",
+        generated / "sp500_adjusted_cov_matrix.csv",
+    ]
+    missing = [f for f in required if not f.exists()]
+
+    if missing:
+        print(f"[covariance] Missing matrices: {[f.name for f in missing]}")
+        ensure_preprocessing_artifacts()  # make sure returns exist first
+        build_and_save_covariance_matrices(
+            returns_path=str(generated / "sp500_timeseries_13-24.csv"),
+            out_raw_path=str(generated / "sp500_raw_cov_matrix.csv"),
+            out_adj_path=str(generated / "sp500_adjusted_cov_matrix.csv"),
+            use_downside_weighting=USE_DOWNSIDE_WEIGHTING,
+        )
+        print("[covariance] Covariance matrices built.")
+    else:
+        print("[covariance] Covariance matrices already present.")
 
 
 # -----------------------------------------------------------------------------

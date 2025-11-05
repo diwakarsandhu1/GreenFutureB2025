@@ -1,12 +1,12 @@
 import pandas as pd
 
-data = pd.read_csv("data_science/Refinitiv ESG Final Data for Analysis.csv")
+data = pd.read_csv("data_science/raw_data/Refinitiv ESG Final Data for Analysis.csv")
 
-tickers_to_keep = pd.read_csv("data_science/tickers_to_keep.csv")['ticker']
+tickers_to_keep = pd.read_csv("data_science/quant/generated_data/tickers_to_keep.csv")['ticker']
 
-performance_data = pd.read_csv("data_science/quant/sp500_performance_summaries.csv")
+performance_data = pd.read_csv("data_science/quant/generated_data/sp500_performance_summaries.csv")
 
-company_data = pd.read_csv("data_science/company_data.csv")
+company_data = pd.read_csv("data_science/raw_data/company_data.csv")
 company_data.set_index('ticker', inplace=True)
 
 columns_to_keep = ['Symbol', 'Name', 'ESG Combined Score', 'ESG Controversies Score', 

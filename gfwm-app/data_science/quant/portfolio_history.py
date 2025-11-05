@@ -11,11 +11,11 @@ def extract_value(var):
 # TODO handle include_spy = False better
 def portfolio_history(portfolio, include_spy = True):
     
-    spy_log_returns = pd.read_csv("data_science/quant/spy_timeseries_13-24.csv")['SPY']
+    spy_log_returns = pd.read_csv("data_science/quant/generated_data/spy_timeseries_13-24.csv")['SPY']
     
     tickers = portfolio.index.tolist()
     
-    tickers_log_returns = pd.read_csv("data_science/quant/sp500_timeseries_13-24.csv")[['date'] + tickers]
+    tickers_log_returns = pd.read_csv("data_science/quant/generated_data/sp500_timeseries_13-24.csv")[['date'] + tickers]
     # print(tickers_log_returns.head())
     
     # TODO clean this up using pandas objects instead of python lists

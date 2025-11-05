@@ -11,7 +11,7 @@ def map_risk_appetite_to_cash_percent(risk_appetite):
 
 def calculate_portfolio(ticker_compatibility_df, cash_percent, use_markowitz, return_summary_statistics = True):
 
-    performance_summaries = pd.read_csv("data_science/quant/sp500_performance_summaries.csv")
+    performance_summaries = pd.read_csv("data_science/quant/generated_data/sp500_performance_summaries.csv")
     #sp500_tickers = performance_summaries.columns.tolist()
 
     tickers = ticker_compatibility_df['ticker']
@@ -24,11 +24,11 @@ def calculate_portfolio(ticker_compatibility_df, cash_percent, use_markowitz, re
     annual_returns = performance_summaries[tickers].iloc[0]
 
     adjusted_cov_matrix = pd.read_csv(
-        "data_science/quant/sp500_adjusted_cov_matrix.csv")
+        "data_science/quant/generated_data/sp500_adjusted_cov_matrix.csv")
     adjusted_cov_matrix.set_index('ticker', inplace=True)
 
     true_cov_matrix = pd.read_csv(
-        "data_science/quant/sp500_raw_cov_matrix.csv")
+        "data_science/quant/generated_data/sp500_raw_cov_matrix.csv")
     true_cov_matrix.set_index('ticker', inplace=True)
 
     # keep entries where both tickers are present
@@ -124,7 +124,7 @@ def get_max_drawdown(nvs: pd.Series, window=None) -> float:
 
 def portfolio_history(portfolio, include_spy = True):
     
-    spy_log_returns = pd.read_csv("data_science/quant/spy_timeseries_13-24.csv")['SPY']
+    spy_log_returns = pd.read_csv("data_science/quant/generated_data/spy_timeseries_13-24.csv")['SPY']
     
     if(portfolio.empty):
         tickers = []
@@ -135,7 +135,7 @@ def portfolio_history(portfolio, include_spy = True):
     
     #print("tickers are ", tickers)
     
-    tickers_log_returns = pd.read_csv("data_science/quant/sp500_timeseries_13-24.csv")[['date'] + tickers]
+    tickers_log_returns = pd.read_csv("data_science/quant/generated_data/sp500_timeseries_13-24.csv")[['date'] + tickers]
     
     # print(tickers_log_returns.head())
     
@@ -246,7 +246,7 @@ def calculate_esg_score(portfolio):
     if(portfolio.empty):
         return 0
     
-    data = pd.read_csv("data_science/preprocessed_refinitiv.csv")[['ticker', 'environment', 'social', 'governance']].set_index('ticker', drop = True)
+    data = pd.read_csv("data_science/raw_data/preprocessed_refinitiv.csv")[['ticker', 'environment', 'social', 'governance']].set_index('ticker', drop = True)
     
     merged_data = data.merge(portfolio, how='inner', left_index=True, right_index=True)
     

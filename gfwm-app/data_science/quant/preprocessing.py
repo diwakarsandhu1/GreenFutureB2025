@@ -196,8 +196,8 @@ def build_spy_returns(spy_filepath: str):
 # ---------------------------------------------------------------------
 
 def build_and_save_core_data(
-    esg_path: str = "../Refinitiv ESG Final Data for Analysis.csv",
-    company_path: str = "../company_data.csv",
+    esg_path: str = "gfwm/data_science/raw_data/Refinitiv ESG Final Data for Analysis.csv",
+    company_path: str = "gfwm/data_science/raw_data/company_data.csv",
     price_filepaths=None,
     spy_filepath: str | None = "spy_raw_timeseries_13-24.csv",
     out_dir: str = "generated_data",
@@ -266,6 +266,48 @@ def load_tickers(path: str = "generated_data/tickers_to_keep.csv") -> pd.Index:
     col = df.columns[0]
     return pd.Index(df[col].astype(str).values, name="ticker")
 
+def ensure_preprocessing_artifacts():
+    """
+    Check for core data outputs (timeseries, performance summaries, etc.).
+    If any are missing, rebuild them using local raw_data files.
+
+    Safe to call from anywhere — does nothing if all files already exist.
+    """
+    this_dir = Path(__file__).resolve().parent           # .../data_science/quant
+    data_dir = this_dir.parent                           # .../data_science
+    raw_data = data_dir / "raw_data"                     # <-- updated line
+    generated = this_dir / "generated_data"
+    generated.mkdir(parents=True, exist_ok=True)
+
+    required = [
+        generated / "sp500_timeseries_13-24.csv",
+        generated / "sp500_performance_summaries.csv",
+        generated / "tickers_to_keep.csv",
+        generated / "spy_timeseries_13-24.csv",
+    ]
+
+    missing = [f for f in required if not f.exists()]
+    if missing:
+        print(f"[preprocessing] Missing core data: {[f.name for f in missing]}")
+        # ✅ Now point to raw_data folder for input CSVs
+        esg_path = raw_data / "Refinitiv ESG Final Data for Analysis.csv"
+        company_path = raw_data / "Company_data.csv"
+        price_filepaths = [
+            raw_data / "SP500_raw_timeseries_1-1-13--12-31-18.csv",
+            raw_data / "SP500_raw_timeseries_1-1-19--11-1-24.csv",
+        ]
+        spy_filepath = raw_data / "Spy_raw_timeseries_13-24.csv"
+
+        build_and_save_core_data(
+            esg_path=str(esg_path),
+            company_path=str(company_path),
+            price_filepaths=[str(p) for p in price_filepaths],
+            spy_filepath=str(spy_filepath),
+            out_dir=str(generated),
+        )
+        print("[preprocessing] Core data built.")
+    else:
+        print("[preprocessing] Core data already present.")
 
 # ---------------------------------------------------------------------
 # Script entrypoint for local testing
