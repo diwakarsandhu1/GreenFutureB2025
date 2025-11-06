@@ -88,8 +88,11 @@ def submit_form(request):
             "portfolio_timeseries": portfolio_timeseries[::5],
             "timeseries_dates": dates[::5],
             
-            # to do, only returns if it used baseline_makowitz not if it used optimized_markowitz
-            "portfolio_weighing_scheme": use_baseline_markowitz
+            "portfolio_weighing_scheme": (
+                "baseline_markowitz" if use_baseline_markowitz
+                else "optimized_markowitz" if use_optimized_markowitz
+                else "none"
+            )
         }
         
         #package data into a dict of dicts for JsonResponse
@@ -117,7 +120,8 @@ def update_weights(request):
         # map risk appetite (0 - 0.2) to cash percent (50% - 10%)
         cash_percent = 0.5 - 2 * update_request_dict['risk_appetite']
         
-        use_markowitz = (update_request_dict['weighing_scheme'] == 'Markowitz Optimized')
+        use_baseline_markowitz = (update_request_dict['weighing_scheme'] == 'Markowitz Optimized')
+        use_optimized_markowitz = (update_request_dict['weighing_scheme'] == 'Optimized Markowitz')
         
         # print(client_portfolio.head())
         
@@ -126,7 +130,8 @@ def update_weights(request):
             # calculate best fit portfolio for the client
             ideal_portfolio_weights = pc.calculate_portfolio(client_portfolio[['ticker', 'compatibility']],
                                                              cash_percent=cash_percent,
-                                                             use_markowitz=use_markowitz,
+                                                             use_baseline_markowitz=use_baseline_markowitz,
+                                                             use_optimized_markowitz=use_optimized_markowitz,
                                                              return_summary_statistics=False)
             
             # set weights column to new weights
@@ -179,7 +184,11 @@ def update_weights(request):
             "portfolio_timeseries": portfolio_timeseries[::5],
             "timeseries_dates": dates[::5],
             
-            "portfolio_weighing_scheme": use_markowitz
+            "portfolio_weighing_scheme": (
+                "baseline_markowitz" if use_baseline_markowitz
+                else "optimized_markowitz" if use_optimized_markowitz
+                else "none"
+            )
         }
         
         # return format for updated_portfolio: {ticker: weight, ticker: weight etc}
