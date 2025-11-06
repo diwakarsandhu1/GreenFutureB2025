@@ -3,7 +3,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 
-from data_science.stock_filter import filter_stocks
+from data_science.preprocess_and_filter.stock_filter import filter_stocks
 import data_science.quant.portfolio_calculator as pc
 
 @csrf_exempt
@@ -39,7 +39,8 @@ def submit_form(request):
         # map risk appetite (0 - 0.2) to cash percent (50% - 10%)
         cash_percent = pc.map_risk_appetite_to_cash_percent(client_responses['risk_appetite'])
         
-        use_markowitz = (client_responses['weighing_scheme'] == 'Markowitz Optimized')
+        use_baseline_markowitz = (client_responses['weighing_scheme'] == 'Baseline Markowitz')
+        use_optimized_markowitz = (client_responses['weighing_scheme'] == 'Optimized Markowitz')
         
         # filter stocks using client responses
         # df with two columns: ticker, compatibility
@@ -51,7 +52,8 @@ def submit_form(request):
         # calculate best fit portfolio for the client
         ideal_portfolio_weights = pc.calculate_portfolio(portfolio[['ticker', 'compatibility']],
                                                       cash_percent,
-                                                      use_markowitz,
+                                                      use_baseline_markowitz,
+                                                      use_optimized_markowitz,
                                                       return_summary_statistics=False)
         
         portfolio['weight'] = ideal_portfolio_weights
@@ -86,7 +88,8 @@ def submit_form(request):
             "portfolio_timeseries": portfolio_timeseries[::5],
             "timeseries_dates": dates[::5],
             
-            "portfolio_weighing_scheme": use_markowitz
+            # to do, only returns if it used baseline_makowitz not if it used optimized_markowitz
+            "portfolio_weighing_scheme": use_baseline_markowitz
         }
         
         #package data into a dict of dicts for JsonResponse

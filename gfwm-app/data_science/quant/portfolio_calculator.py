@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import data_science.quant.markowitz_optimization as markowitz_optimization
+import data_science.quant.baseline_markowitz.markowitz_optimization as markowitz_optimization
 
 # TODO move this to .env
 # risk free rate based of historical average of 30d yield
@@ -9,33 +9,30 @@ ANNUAL_RISK_FREE_RATE = 0.0153
 def map_risk_appetite_to_cash_percent(risk_appetite):
     return 0.5 - 2 * risk_appetite
 
-def calculate_portfolio(ticker_compatibility_df, cash_percent, use_markowitz, return_summary_statistics = True):
+def calculate_portfolio(ticker_compatibility_df, cash_percent, use_baseline_markowitz, use_optimized_markowitz, return_summary_statistics = True):
 
-    performance_summaries = pd.read_csv("data_science/quant/generated_data/sp500_performance_summaries.csv")
-    #sp500_tickers = performance_summaries.columns.tolist()
-
+    performance_summaries = pd.read_csv("data_science/data/universal_data/sp500_performance_summaries.csv")
     tickers = ticker_compatibility_df['ticker']
-    compatibility_scores = ticker_compatibility_df['compatibility']
-
-    # TODO move this check to filter stocks so it does not return tickers for which we don't have financial data
-    # important note: tickers are in the same order in every data source
-
     n = len(tickers)
     annual_returns = performance_summaries[tickers].iloc[0]
 
-    adjusted_cov_matrix = pd.read_csv(
-        "data_science/quant/generated_data/sp500_adjusted_cov_matrix.csv")
-    adjusted_cov_matrix.set_index('ticker', inplace=True)
+    if (use_baseline_markowitz):
+        # Use the baselline Markowitz from 2024's Group
 
-    true_cov_matrix = pd.read_csv(
-        "data_science/quant/generated_data/sp500_raw_cov_matrix.csv")
-    true_cov_matrix.set_index('ticker', inplace=True)
+        # TODO move this check to filter stocks so it does not return tickers for which we don't have financial data
+        # important note: tickers are in the same order in every data source
 
-    # keep entries where both tickers are present
-    adjusted_cov_matrix = adjusted_cov_matrix.loc[tickers, tickers].to_numpy()
-    true_cov_matrix = true_cov_matrix.loc[tickers, tickers].to_numpy()
+        adjusted_cov_matrix = pd.read_csv(
+            "data_science/data/covariance_models/baseline_markowitz/sp500_adjusted_cov_matrix.csv")
+        adjusted_cov_matrix.set_index('ticker', inplace=True)
 
-    if (use_markowitz):
+        true_cov_matrix = pd.read_csv(
+            "data_science/data/covariance_models/baseline_markowitz/sp500_raw_cov_matrix.csv")
+        true_cov_matrix.set_index('ticker', inplace=True)
+
+        # keep entries where both tickers are present
+        adjusted_cov_matrix = adjusted_cov_matrix.loc[tickers, tickers].to_numpy()
+        true_cov_matrix = true_cov_matrix.loc[tickers, tickers].to_numpy()
 
         # keep identified tickers and convert to daily mean log returns
         mean_log_returns = annual_returns/252
@@ -81,8 +78,11 @@ def calculate_portfolio(ticker_compatibility_df, cash_percent, use_markowitz, re
         alpha = 1 - cash_percent
         
         ideal_weights = np.array(alpha * tangent_portfolio['weights']).reshape(n, 1)
-
-    # not markowitz -> equal weights
+    
+    elif (use_optimized_markowitz):
+        #to do
+        # will use the bootstrapped_markowitz.py file in the optimized_markowitz folder
+        pass
     else:
         alpha = 1- cash_percent
         ideal_weights = np.repeat(alpha/n, n).reshape(n, 1)
@@ -124,7 +124,7 @@ def get_max_drawdown(nvs: pd.Series, window=None) -> float:
 
 def portfolio_history(portfolio, include_spy = True):
     
-    spy_log_returns = pd.read_csv("data_science/quant/generated_data/spy_timeseries_13-24.csv")['SPY']
+    spy_log_returns = pd.read_csv("data_science/data/universal_data/spy_timeseries_13-24.csv")['SPY']
     
     if(portfolio.empty):
         tickers = []
@@ -135,7 +135,7 @@ def portfolio_history(portfolio, include_spy = True):
     
     #print("tickers are ", tickers)
     
-    tickers_log_returns = pd.read_csv("data_science/quant/generated_data/sp500_timeseries_13-24.csv")[['date'] + tickers]
+    tickers_log_returns = pd.read_csv("data_science/data/universal_data/sp500_timeseries_13-24.csv")[['date'] + tickers]
     
     # print(tickers_log_returns.head())
     
@@ -246,7 +246,7 @@ def calculate_esg_score(portfolio):
     if(portfolio.empty):
         return 0
     
-    data = pd.read_csv("data_science/raw_data/preprocessed_refinitiv.csv")[['ticker', 'environment', 'social', 'governance']].set_index('ticker', drop = True)
+    data = pd.read_csv("data_science/preprocess_and_filter/preprocessed_refinitiv.csv")[['ticker', 'environment', 'social', 'governance']].set_index('ticker', drop = True)
     
     merged_data = data.merge(portfolio, how='inner', left_index=True, right_index=True)
     
