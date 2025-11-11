@@ -5,6 +5,7 @@ import json
 
 from data_science.preprocess_and_filter.stock_filter import filter_stocks
 import data_science.quant.portfolio_calculator as pc
+import data_science.quant.monte_carlo.monte_carlo as mc 
 
 @csrf_exempt
 def hello_api(request):
@@ -247,4 +248,26 @@ def update_risk(request):
             "updated_summary_statistics": summary_statistics
         })
         
+    return JsonResponse({"error": "Invalid request method."}, status=401)
+
+@csrf_exempt
+def simulate(request):
+    if request.method == "POST":
+
+        # build dict of client responses
+        client_responses = json.loads(request.body)
+
+        # Run monte carlo simulation
+        results = mc.run_monte_carlo_simulation(
+            client_responses['portfolio'],
+            client_responses['cash_percent'],
+            client_responses['horizon'],
+            client_responses['num_paths'],
+            client_responses['portfolio_weighing_scheme'],
+            client_responses['rebalancing_rule'],
+            client_responses['compounding_type']
+        )
+
+        return JsonResponse(results, safe=False, status=200)
+    
     return JsonResponse({"error": "Invalid request method."}, status=401)

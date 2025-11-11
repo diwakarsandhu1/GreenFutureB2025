@@ -10,11 +10,13 @@ import ComparisonTable from "./ComparisonTable";
 import PieChart from "./PieChart";
 import TimeseriesChart from "./TimeseriesChart";
 
+import MonteCarlo from "./MonteCarlo";
+
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 const RankingFormResults = ({ serverResponse, formResults }) => {
   //console.log('received props ', serverResponse, formResults);
-
+  const [serverPortfolio, setServerPortfolio] = useState(serverResponse?.portfolio || {});
   const [compatibilityScores, setCompatibilityScores] = useState({});
   const [portfolioWeights, setPortfolioWeights] = useState({});
 
@@ -160,6 +162,7 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
 
             // update portfolio data with new weights via listener on portfolioWeights
             setPortfolioWeights(updatedPortfolio);
+            setServerPortfolio(updatedPortfolio);
 
             const {
               portfolio_return_range: portfolioReturnRange,
@@ -505,6 +508,7 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
 
         // update portfolio data with new weights via listener on portfolioWeights
         setPortfolioWeights(updatedPortfolio);
+        setServerPortfolio(updatedPortfolio);
 
         const {
           portfolio_return_range: portfolioReturnRange,
@@ -589,6 +593,9 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
             <PieChart weights={portfolioData.map((item) => item.weight * 100)} />
           </div>
         </div>
+
+          { /* Monte Carlo Simulation */}
+          <MonteCarlo portfolio={serverPortfolio} cash_percent={riskAppetite} portfolio_weighing_scheme={weighingScheme}/>
 
         {/* portfolio results header and edit button */}
         <div className="flex items-center justify-between mb-4">
