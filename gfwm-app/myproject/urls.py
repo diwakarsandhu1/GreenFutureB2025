@@ -23,6 +23,6 @@ urlpatterns = [
     path('submitForm/', views.submit_form, name='submit_form'),
     path('hello/', views.hello_api, name='hello_api'),
     path('updateWeights/', views.update_weights, name = 'update_weights'),
-    path('updateRisk/', views.update_risk, name = 'update_risk')
-
+    path('updateRisk/', views.update_risk, name = 'update_risk'),
+    path('simulate/', views.simulate, name = 'simulate')
 ]
