@@ -92,7 +92,7 @@ def submit_form(request):
             "portfolio_weighing_scheme": (
                 "baseline_markowitz" if use_baseline_markowitz
                 else "optimized_markowitz" if use_optimized_markowitz
-                else "none"
+                else "equal_weights"
             )
         }
         
@@ -188,7 +188,7 @@ def update_weights(request):
             "portfolio_weighing_scheme": (
                 "baseline_markowitz" if use_baseline_markowitz
                 else "optimized_markowitz" if use_optimized_markowitz
-                else "none"
+                else "equal_weights"
             )
         }
         
