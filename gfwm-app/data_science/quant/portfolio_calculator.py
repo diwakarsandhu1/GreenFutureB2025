@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import data_science.quant.baseline_markowitz.markowitz_optimization as markowitz_optimization
+import data_science.quant.optimized_markowitz.bootstrapped_markowitz as opt_markowitz
 
 # TODO move this to .env
 # risk free rate based of historical average of 30d yield
@@ -80,13 +81,124 @@ def calculate_portfolio(ticker_compatibility_df, cash_percent, use_baseline_mark
         ideal_weights = np.array(alpha * tangent_portfolio['weights']).reshape(n, 1)
     
     elif (use_optimized_markowitz):
-        #to do
-        # will use the bootstrapped_markowitz.py file in the optimized_markowitz folder
-        pass
-    else:
-        alpha = 1- cash_percent
-        ideal_weights = np.repeat(alpha/n, n).reshape(n, 1)
+        adj_cov_df = pd.read_csv(
+            "data_science/data/covariance_models/optimized_markowitz/sp500_adjusted_cov_matrix.csv",
+            index_col=0,
+        )
+        true_cov_df = pd.read_csv(
+            "data_science/data/covariance_models/optimized_markowitz/sp500_raw_cov_matrix.csv",
+            index_col=0,
+        )
 
+        # --- Align tickers: drop any tickers that aren't in the optimized Σ ---
+        available = [t for t in tickers if t in adj_cov_df.index]
+
+        if len(available) == 0:
+            raise ValueError("None of the requested tickers are present in the optimized covariance matrices.")
+
+        if len(available) != len(tickers):
+            missing = [t for t in tickers if t not in adj_cov_df.index]
+            print(f"[WARN] Dropping {len(missing)} tickers not in optimized Σ: {missing}")
+
+        # overwrite tickers / annual_returns / n to match the optimized universe
+        tickers = pd.Index(available)
+        annual_returns = annual_returns[tickers]
+        n = len(tickers)
+
+        # keep only the tickers we’re actually using, in the same order
+        adjusted_cov_matrix = adj_cov_df.loc[tickers, tickers].to_numpy()
+        true_cov_matrix = true_cov_df.loc[tickers, tickers].to_numpy()
+
+        # --- Load daily returns for these tickers ---
+        returns_df_all = pd.read_csv(
+            "data_science/data/universal_data/sp500_timeseries_13-24.csv",
+            index_col=0,
+            parse_dates=True,
+        )
+        returns_df = returns_df_all[tickers]   # same column order as tickers
+
+        lb_vec, ub_vec = opt_markowitz.make_bounds_from_sigma(
+        adjusted_cov_matrix,
+        max_cap=0.20,   # was 0.05   <-- CHANGED
+        k=10.0,         # was 5.0    <-- CHANGED (more weight allowed to low-vol names)
+        floor_frac=0.5, # same
+        )
+
+    # ensure min-variance portfolio is feasible (lift caps if needed, cap hard at 30% instead of 10%)
+        w_minvar = opt_markowitz._qp_min_variance(
+        adjusted_cov_matrix,
+        lb_vec,
+        np.ones_like(ub_vec),
+        )
+        ub_vec = opt_markowitz.lift_caps_above_minvar(
+        ub_vec,
+        w_minvar,
+        slack=1.0,      # was 1.2    <-- CHANGED (don’t tighten further)
+        hard_cap=0.30,  # was 0.10   <-- CHANGED
+        )
+
+    # extra safety: make sure total capacity can actually reach 1
+        if ub_vec.sum() < 1.0:
+            scale = 1.05 * (1.0 / ub_vec.sum())
+            ub_vec *= scale
+            print(f"[WARN] sum(ub_vec) was < 1, scaled bounds up by factor {scale:.3f}")
+
+        # --- Build target return grid (daily), constrained by expected ranges ---
+        mu_daily = (annual_returns / 252.0).values  # shape (n,)
+        rf_daily = (1.0 + ANNUAL_RISK_FREE_RATE) ** (1.0 / 252.0) - 1.0
+
+        # Try to get a feasible range via QP; if it blows up, fall back.
+        try:
+            rmin, rmax = opt_markowitz.feasible_return_range(mu_daily, lb_vec, ub_vec)
+        except Exception as e:
+            print(f"[WARN] feasible_return_range failed: {e}. Falling back to percentile-based target grid.")
+            rmin, rmax = None, None
+
+        if (rmin is not None) and (rmax is not None) and (rmax > rf_daily):
+            lo = max(rf_daily, rmin + 1e-8)
+            hi = max(lo + 1e-8, rmax - 1e-8)
+            target_returns = np.linspace(lo, hi, 60)
+        else:
+            # fallback: percentile grid on annual μ, same idea as optimized script
+            mu_annual = annual_returns.values
+            mu_clean = mu_annual[~np.isnan(mu_annual)]
+            min_ann = float(np.nanpercentile(mu_clean, 20))
+            max_ann = float(np.nanpercentile(mu_clean, 80) * 1.5)
+            target_returns = np.linspace(min_ann / 252.0, max_ann / 252.0, 60)
+        # --- Run Michaud bootstrap resampling ---
+        base_frontier, michaud_frontier = opt_markowitz.michaud_resampled_frontier(
+            returns_df=returns_df,
+            true_cov=true_cov_matrix,
+            adjusted_cov=adjusted_cov_matrix,
+            target_returns=target_returns,
+            annual_risk_free_rate=ANNUAL_RISK_FREE_RATE,
+            bounds=(lb_vec, ub_vec),
+            n_resamples=80,
+            seed=123,
+        )
+
+        # --- Tangent (max-sharpe) portfolio ---
+        tangent = opt_markowitz.compute_tangent_from_frontier(
+            frontier_df=michaud_frontier,
+            annual_risk_free_rate=ANNUAL_RISK_FREE_RATE,
+        )
+
+        # --- Scale weights by alpha = 1 - cash_percent (client’s risk appetite) ---
+        alpha = 1.0 - cash_percent
+        w_tangent = np.asarray(tangent["weights"]).ravel()
+        ideal_weights = (alpha * w_tangent).reshape(n, 1)
+    else:
+        # <<< FIXED: previously true_cov_matrix was undefined here
+
+        alpha = 1 - cash_percent
+        ideal_weights = np.repeat(alpha / n, n).reshape(n, 1)
+
+        # Load any covariance matrix so summary statistics will NOT crash
+        true_cov_df = pd.read_csv(
+            "data_science/data/covariance_models/baseline_markowitz/sp500_raw_cov_matrix.csv"
+        ).set_index("ticker")
+
+        true_cov_matrix = true_cov_df.loc[tickers, tickers].to_numpy()  # <<< NEW
     
     if(not return_summary_statistics):
         # convert to row vector of weights
