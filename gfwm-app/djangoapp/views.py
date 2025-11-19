@@ -121,7 +121,7 @@ def update_weights(request):
         # map risk appetite (0 - 0.2) to cash percent (50% - 10%)
         cash_percent = 0.5 - 2 * update_request_dict['risk_appetite']
         
-        use_baseline_markowitz = (update_request_dict['weighing_scheme'] == 'Markowitz Optimized')
+        use_baseline_markowitz = (update_request_dict['weighing_scheme'] == 'Baseline Markowitz')
         use_optimized_markowitz = (update_request_dict['weighing_scheme'] == 'Optimized Markowitz')
         
         # print(client_portfolio.head())
@@ -257,15 +257,15 @@ def simulate(request):
         # build dict of client responses
         client_responses = json.loads(request.body)
 
+        cash_percent = pc.map_risk_appetite_to_cash_percent(client_responses['riskAppetite'])
+
         # Run monte carlo simulation
         results = mc.run_monte_carlo_simulation(
             client_responses['portfolio'],
-            client_responses['cash_percent'],
+            cash_percent,
             client_responses['horizon'],
             client_responses['num_paths'],
-            client_responses['portfolio_weighing_scheme'],
-            client_responses['rebalancing_rule'],
-            client_responses['compounding_type']
+            client_responses['portfolio_weighing_scheme']
         )
 
         return JsonResponse(results, safe=False, status=200)

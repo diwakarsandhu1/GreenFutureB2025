@@ -111,6 +111,8 @@ def calculate_optimal_portfolios(true_mean_returns, adjusted_mean_returns, true_
         lambda w: 1 - 1e4*np.sum((w - 1.0/n)**4)
     )
     
+    print("Optimal Portfolios", optimal_portfolios)
+
     if(calculate_best_fit):
         # Calculate quadratic best fit
         # annual_return as independent variable, annual_volatility as dependent variable
@@ -119,7 +121,6 @@ def calculate_optimal_portfolios(true_mean_returns, adjusted_mean_returns, true_
             optimal_portfolios['annual_volatility'], 2, domain=[0.0, 0.5])
         
         return optimal_portfolios, best_fit
-    
     return optimal_portfolios
 
 

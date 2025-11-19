@@ -2,9 +2,10 @@ import React, {useState, useEffect} from "react";
 
 import CircularProgress from "@mui/material/CircularProgress";
 import MonteCarloChart from "./MonteCarloChart";
+import ComparisonTable from "./ComparisonTable";
 
 
-const MonteCarlo = ({ portfolio, cash_percent, portfolio_weighing_scheme }) => {
+const MonteCarlo = ({ portfolio, riskAppetite, portfolio_weighing_scheme }) => {
     const [loading, setLoading] = useState(false);
     const [simulationResponse, setSimulationResponse] = useState({});
     const [showResults, setShowResults] = useState(false);
@@ -14,12 +15,10 @@ const MonteCarlo = ({ portfolio, cash_percent, portfolio_weighing_scheme }) => {
     // User Inputs
     const [simData, setSimData] = useState({
         portfolio: portfolio|| {},
-        cash_percent: cash_percent || 0.2,
+        riskAppetite: riskAppetite || 0.1,
         portfolio_weighing_scheme: portfolio_weighing_scheme,
         horizon: 120,
         num_paths: 5000,
-        rebalancing_rule: "annual",
-        compounding_type: "logarithmic",
     });
 
     // Input handlers
@@ -27,9 +26,50 @@ const MonteCarlo = ({ portfolio, cash_percent, portfolio_weighing_scheme }) => {
         setSimData((prev) => ({ ...prev, [key]: value }));
     };
 
-    const handleSelectChange = (key, value) => {
-        setSimData((prev) => ({ ...prev, [key]: value }));
-    };
+    const comparisonTableData = simulationResponse?.portfolio && simulationResponse?.sp500
+        ? [
+            {
+                field: "Average Annual Return",
+                portfolio: `${(simulationResponse.portfolio.stats.mean_return * 100).toFixed(2)}%`,
+                sp500: `${(simulationResponse.sp500.stats.mean_return * 100).toFixed(2)}%`,
+            },
+            {
+                field: "Average Return Compared to Benchmark",
+                portfolio: `${((simulationResponse.portfolio.stats.mean_return - simulationResponse.sp500.stats.mean_return) * 100).toFixed(2)}%`,
+                sp500: "",
+            },
+            {
+                field: "Average Standard Deviation",
+                portfolio: `${(simulationResponse.portfolio.stats.volatility * 100).toFixed(2)}%`,
+                sp500: `${(simulationResponse.sp500.stats.volatility * 100).toFixed(2)}%`,
+            },
+            {
+                field: "Estimated Sharpe Ratio",
+                portfolio: simulationResponse.portfolio.stats.sharpe_ratio.toFixed(2),
+                sp500: simulationResponse.sp500.stats.sharpe_ratio.toFixed(2),
+            },
+            {
+                field: "1-Month VaR (95%)",
+                portfolio: `${(simulationResponse.portfolio.stats.VaR['1m']['var95'] * 100).toFixed(2)}%`,
+                sp500: `${(simulationResponse.sp500.stats.VaR['1m']['var95'] * 100).toFixed(2)}%`,
+            },
+            {
+                field: "1-Month VaR (99%)",
+                portfolio: `${(simulationResponse.portfolio.stats.VaR['1m']['var99'] * 100).toFixed(2)}%`,
+                sp500: `${(simulationResponse.sp500.stats.VaR['1m']['var99'] * 100).toFixed(2)}%`,
+            },
+            {
+                field: "Horizon VaR (95%)",
+                portfolio: `${(simulationResponse.portfolio.stats.VaR['horizon']['var95'] * 100).toFixed(2)}%`,
+                sp500: `${(simulationResponse.sp500.stats.VaR['horizon']['var95'] * 100).toFixed(2)}%`,
+            },
+            {
+                field: "Horizon VaR (99%)",
+                portfolio: `${(simulationResponse.portfolio.stats.VaR['horizon']['var99'] * 100).toFixed(2)}%`,
+                sp500: `${(simulationResponse.sp500.stats.VaR['horizon']['var99'] * 100).toFixed(2)}%`,
+            },
+            ]
+        : null;
 
 
     // Handle Simulation
@@ -63,38 +103,26 @@ const MonteCarlo = ({ portfolio, cash_percent, portfolio_weighing_scheme }) => {
 
     // Update simData when props change
     useEffect(() => {
-    if (!portfolio || Object.keys(portfolio).length === 0) return;
+        if (!portfolio || Object.keys(portfolio).length === 0) return;
 
-    setSimData((prev) => {
-        const next = {
-        ...prev,
-        portfolio,
-        cash_percent,
-        portfolio_weighing_scheme,
-        };
-        // only update if something changed
-        if (
-        prev.portfolio === next.portfolio &&
-        prev.cash_percent === next.cash_percent &&
-        prev.portfolio_weighing_scheme === next.portfolio_weighing_scheme
-        ) {
-        return prev;
-        }
-        return next;
-    });
-    }, [portfolio, cash_percent, portfolio_weighing_scheme]);
-
+        setSimData(prev => ({
+            ...prev,
+            portfolio,
+            riskAppetite,
+            portfolio_weighing_scheme,
+        }));
+    }, [portfolio, riskAppetite, portfolio_weighing_scheme]);
 
 
     // --- Auto re-run simulation whenever the portfolio changes dynamically ---
     useEffect(() => {
         if (!hasUserSimulated) return;
-        if (!portfolio || Object.keys(portfolio).length === 0) return;
 
-        console.log("Detected portfolio or form setting change — re-running Monte Carlo simulation...");
+        console.log("(2) Detected portfolio change — re-running Monte Carlo simulation...");
+        console.log("(3) Sending to resimulate: ", portfolio)
         handleSimulate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [portfolio, cash_percent]);
+    }, [simData]);
 
     return (
         <div className="mt-12 mb-8">
@@ -120,7 +148,7 @@ const MonteCarlo = ({ portfolio, cash_percent, portfolio_weighing_scheme }) => {
                 step="12"
                 value={simData.horizon}
                 onChange={(e) => handleSliderChange("horizon", Number(e.target.value))}
-                className="w-full h-2 bg-gray-300 rounded-full appearance-none cursor-pointer accent-gfwmDarkGreen"
+                className="mx-4 w-full h-2 appearance-none bg-gray-300 rounded-full slider-thumb"
                 />
             </div>
 
@@ -131,45 +159,13 @@ const MonteCarlo = ({ portfolio, cash_percent, portfolio_weighing_scheme }) => {
                 </label>
                 <input
                 type="range"
-                min="500"
+                min="1000"
                 max="10000"
                 step="500"
                 value={simData.num_paths}
                 onChange={(e) => handleSliderChange("num_paths", Number(e.target.value))}
-                className="w-full h-2 bg-gray-300 rounded-full appearance-none cursor-pointer accent-gfwmDarkGreen"
+                className="mx-4 w-full h-2 appearance-none bg-gray-300 rounded-full slider-thumb"
                 />
-            </div>
-            </div>
-
-            {/* === Dropdowns Row (Rebalancing + Compounding) === */}
-            <div className="flex flex-wrap gap-6 mt-2">
-            <div className="flex-1 min-w-[160px]">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                Rebalancing Rule (Not Yet Implemented)
-                </label>
-                <select
-                value={simData.rebalancing_rule}
-                onChange={(e) => handleSelectChange("rebalancing_rule", e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-gray-700 text-sm focus:outline-none focus:ring-1 focus:ring-gfwmLightGreen"
-                >
-                <option value="monthly">Monthly</option>
-                <option value="quarterly">Quarterly</option>
-                <option value="annual">Annual</option>
-                </select>
-            </div>
-
-            <div className="flex-1 min-w-[160px]">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                Compounding Type
-                </label>
-                <select
-                value={simData.compounding_type}
-                onChange={(e) => handleSelectChange("compounding_type", e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-gray-700 text-sm focus:outline-none focus:ring-1 focus:ring-gfwmLightGreen"
-                >
-                <option value="logarithmic">Logarithmic</option>
-                <option value="arithmetic">Arithmetic</option>
-                </select>
             </div>
             </div>
 
@@ -178,68 +174,54 @@ const MonteCarlo = ({ portfolio, cash_percent, portfolio_weighing_scheme }) => {
             <button
                 type="submit"
                 disabled={loading}
-                className="hover:opacity-75 bg-gfwmDarkGreen text-white px-6 py-2 rounded text-sm"
+                className="hover:opacity-75 bg-gfwmDarkGreen text-white px-4 py-2 rounded mb-4"
             >
                 {loading ? "Simulating..." : "Simulate"}
             </button>
             </div>
         </form>
 
-            {/* --- Simulation Results --- */}
-            {(showResults || loading) && (
-                <div className="mt-10 bg-white rounded-lg shadow-md p-6">
-                    <header className="mb-4">
-                    <h3 className="text-xl font-bold text-gray-800">Monte Carlo Projection</h3>
-                    </header>
+        {/* --- Simulation Results --- */}
+        {(showResults || loading) && (
+            <div className="mt-10 bg-white rounded-lg shadow-md p-6">
+                <header className="mb-4">
+                <h3 className="text-xl font-bold text-gray-800">Monte Carlo Projection</h3>
+                </header>
 
-                    <div className="grid grid-cols-12 gap-8 items-start">
-                    {/* === LEFT SIDE: Projection Statistics === */}
-                    {!loading && simulationResponse?.stats ? (
-                        <div className="col-span-12 md:col-span-3 space-y-2">
-                        <p className="text-gray-700">
-                            <span className="font-semibold">Mean Return:</span>{" "}
-                            {`${(simulationResponse.stats.mean_return * 100).toFixed(2)}%`}
-                        </p>
-                        <p className="text-gray-700">
-                            <span className="font-semibold">Volatility:</span>{" "}
-                            {`${(simulationResponse.stats.volatility * 100).toFixed(2)}%`}
-                        </p>
-                        <p className="text-gray-700">
-                            <span className="font-semibold">Sharpe Ratio:</span>{" "}
-                            {simulationResponse.stats.sharpe_ratio?.toFixed(2)}
-                        </p>
-                        <p className="text-gray-700">
-                            <span className="font-semibold">Max Drawdown:</span>{" "}
-                            {`${(simulationResponse.stats.max_drawdown * 100).toFixed(2)}%`}
-                        </p>
-                        </div>
-                    ) : (
-                        <div className="col-span-12 md:col-span-3 flex items-center justify-center text-gray-500">
+                <div className="grid grid-cols-12 gap-8 items-start">
+                {/* === LEFT SIDE: Projection Statistics === */}
+                {!loading && comparisonTableData ? (
+                    <div className="col-span-12 md:col-span-4">
+                        <ComparisonTable data={comparisonTableData} />
+                    </div>
+                ) : (
+                    <div className="col-span-12 md:col-span-8 flex items-center justify-center text-gray-500">
                         {loading && "Running simulation..."}
-                        </div>
-                    )}
+                    </div>
+                )}
 
-                    {/* === RIGHT SIDE: Monte Carlo Chart OR Spinner === */}
-                    <div className="col-span-12 md:col-span-9 h-[400px] flex items-center justify-center">
-                        {loading ? (
-                        <CircularProgress color="success" size={50} thickness={4} />
-                        ) : simulationResponse?.times && simulationResponse?.pctBands ? (
-                        <MonteCarloChart
-                            dates={simulationResponse.times.map((d) =>
-                            new Date(d).toLocaleDateString("en-US", {
-                                month: "short",
-                                year: "numeric",
-                            })
-                            )}
-                            pctBands={simulationResponse.pctBands}
-                        />
-                        ) : (
-                        <p className="text-gray-500">Run a simulation to see results.</p>
+                {/* === RIGHT SIDE: Monte Carlo Chart OR Spinner === */}
+                <div className="col-span-12 md:col-span-8 flex items-center justify-center">
+                    {loading ? (
+                    <CircularProgress color="success" size={50} thickness={4} />
+                    ) : simulationResponse?.times && simulationResponse?.portfolio?.pctBands ? (
+                    <MonteCarloChart
+                        dates={simulationResponse.times.map((d) =>
+                        new Date(d).toLocaleDateString("en-US", {
+                            month: "short",
+                            year: "numeric",
+                        })
                         )}
-                    </div>
-                    </div>
+                        pctBandsPortfolio={simulationResponse.portfolio.pctBands}
+                        pctBandsSPY={simulationResponse.sp500.pctBands}
+                    />
+                    ) : (
+                    <p className="text-gray-500">Run a simulation to see results.</p>
+                    )}
                 </div>
-            )}
+                </div>
+            </div>
+        )}
 
 
         </div>
