@@ -160,12 +160,14 @@ def build_and_save_covariance_matrices(
     # 2) Raw covariance
     Sigma_raw = estimate_sample_covariance(returns_df, use_downside_weighting)
     covariance_diagnostics(Sigma_raw, name="Σ_raw (sample)")
+    Sigma_raw.index.name = "ticker"
     Sigma_raw.to_csv(out_raw_path, index=True)
     print(f"[INFO] Saved raw covariance to: {out_raw_path}")
 
     # 3) Shrunk + PSD covariance
     Sigma_adj = estimate_shrunk_covariance_lw(returns_df, use_downside_weighting=use_downside_weighting)
     covariance_diagnostics(Sigma_adj, name="Σ_LW+PSD (shrunk)")
+    Sigma_adj.index.name = "ticker"
     Sigma_adj.to_csv(out_adj_path, index=True)
     print(f"[INFO] Saved adjusted covariance to: {out_adj_path}")
 
