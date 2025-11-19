@@ -19,6 +19,8 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
   const [serverPortfolio, setServerPortfolio] = useState(serverResponse?.portfolio || {});
   const [compatibilityScores, setCompatibilityScores] = useState({});
   const [portfolioWeights, setPortfolioWeights] = useState({});
+  const [initialized, setInitialized] = useState(false);
+
 
   // unpack server response
   const [portfolioSummaryStatistics, setPortfolioSummaryStatistics] = useState({
@@ -41,50 +43,53 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
 
   // unpack server response and update state variables
   useEffect(() => {
-    if (serverResponse) {
-      setCompatibilityScores(serverResponse.sp500_compatibility);
 
-      // stores portfolio weights in {ticker: weight} object format
-      // initialized by server response to form submission
-      // modified when user adds and removes stocks in portfolio
-      setPortfolioWeights(serverResponse.portfolio);
+    if (!serverResponse || initialized) return;
+    
+    setCompatibilityScores(serverResponse.sp500_compatibility);
 
-      // unpack server's summary statistics
-      const {
-        portfolio_esg_score: portfolioESGScore,
-        portfolio_return_range: portfolioReturnRange,
-        portfolio_volatility: portfolioVolatility,
-        portfolio_sharpe: portfolioSharpe,
-        portfolio_max_dd: portfolioMaxDD,
-        portfolio_timeseries: portfolioTimeseries,
-        sp500_average_return: sp500AverageReturn,
-        sp500_average_volatility: sp500AverageVolatility,
-        sp500_sharpe: sp500Sharpe,
-        spy_max_dd: spyMaxDD,
-        spy_timeseries: spyTimeseries,
-        timeseries_dates: timeseriesDates,
-      } = serverResponse.summary_statistics;
+    // stores portfolio weights in {ticker: weight} object format
+    // initialized by server response to form submission
+    // modified when user adds and removes stocks in portfolio
+    setPortfolioWeights(serverResponse.portfolio);
 
-      console.log("portfolioSharpe ", portfolioSharpe);
+    // unpack server's summary statistics
+    const {
+      portfolio_esg_score: portfolioESGScore,
+      portfolio_return_range: portfolioReturnRange,
+      portfolio_volatility: portfolioVolatility,
+      portfolio_sharpe: portfolioSharpe,
+      portfolio_max_dd: portfolioMaxDD,
+      portfolio_timeseries: portfolioTimeseries,
+      sp500_average_return: sp500AverageReturn,
+      sp500_average_volatility: sp500AverageVolatility,
+      sp500_sharpe: sp500Sharpe,
+      spy_max_dd: spyMaxDD,
+      spy_timeseries: spyTimeseries,
+      timeseries_dates: timeseriesDates,
+    } = serverResponse.summary_statistics;
 
-      setPortfolioSummaryStatistics({
-        ESGScore: portfolioESGScore,
-        returnRange: portfolioReturnRange,
-        averageReturn: (portfolioReturnRange[0] + portfolioReturnRange[1]) / 2.0,
-        volatility: portfolioVolatility,
-        sharpe: portfolioSharpe,
-        maxDD: portfolioMaxDD,
-        timeseries: portfolioTimeseries,
-      });
-      setSP500SummaryStatistics({
-        averageReturn: sp500AverageReturn,
-        volatility: sp500AverageVolatility,
-        sharpe: sp500Sharpe,
-        maxDD: spyMaxDD,
-        timeseries: spyTimeseries,
-        timeseriesDates,
-      });
-    }
+    console.log("portfolioSharpe ", portfolioSharpe);
+
+    setPortfolioSummaryStatistics({
+      ESGScore: portfolioESGScore,
+      returnRange: portfolioReturnRange,
+      averageReturn: (portfolioReturnRange[0] + portfolioReturnRange[1]) / 2.0,
+      volatility: portfolioVolatility,
+      sharpe: portfolioSharpe,
+      maxDD: portfolioMaxDD,
+      timeseries: portfolioTimeseries,
+    });
+    setSP500SummaryStatistics({
+      averageReturn: sp500AverageReturn,
+      volatility: sp500AverageVolatility,
+      sharpe: sp500Sharpe,
+      maxDD: spyMaxDD,
+      timeseries: spyTimeseries,
+      timeseriesDates,
+    });
+    
+    setInitialized(true);
   }, [serverResponse]);
 
   // serialized version of esg preferences, just to check if changes occured
@@ -195,7 +200,6 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
     if (serverResponse && !isPortfolioOutdated) {
       // package up tickers to update weights for
       const tickers = portfolioData.map((row) => row.ticker);
-
       if (tickers.length > 0) {
         console.log(tickers);
         updatePortfolioWeights(tickers);
@@ -503,7 +507,7 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
       .then(({ updated_portfolio: updatedPortfolio, updated_summary_statistics: updatedSummaryStatistics }) => {
         //unpack response to get portfolio object (tickers and weights) and summary statistics
 
-        console.log("Server response updated portfolio: ", updatedPortfolio);
+        console.log("(1) Server response updated portfolio: ", updatedPortfolio);
         console.log("Server response updated summary stats: ", updatedSummaryStatistics);
 
         // update portfolio data with new weights via listener on portfolioWeights
@@ -595,7 +599,7 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
         </div>
 
           { /* Monte Carlo Simulation */}
-          <MonteCarlo portfolio={serverPortfolio} cash_percent={riskAppetite} portfolio_weighing_scheme={weighingScheme}/>
+          <MonteCarlo portfolio={serverPortfolio} riskAppetite={riskAppetite} portfolio_weighing_scheme={weighingScheme}/>
 
         {/* portfolio results header and edit button */}
         <div className="flex items-center justify-between mb-4">
