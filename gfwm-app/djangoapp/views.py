@@ -265,7 +265,9 @@ def simulate(request):
             cash_percent,
             client_responses['horizon'],
             client_responses['num_paths'],
-            client_responses['portfolio_weighing_scheme']
+            client_responses['advisor_fee'],
+            client_responses['portfolio_weighing_scheme'],
+            client_responses['rebalancing_rule'],
         )
 
         return JsonResponse(results, safe=False, status=200)
