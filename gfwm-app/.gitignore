@@ -18,6 +18,8 @@
 .env.test.local
 .env.production.local
 .env.production
+*.pyc
+.venv/
 
 
 npm-debug.log*

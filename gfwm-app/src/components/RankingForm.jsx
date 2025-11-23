@@ -49,7 +49,8 @@ const RankingForm = () => {
 
   const weighing_scheme_choices = {
     choice1: "Equal Weights",
-    choice2: "Markowitz Optimized",
+    choice2: "Baseline Markowitz",
+    choice3: "Optimized Markowitz"
   };
   const [weighingScheme, setWeighingScheme] = useState("choice1"); //equal weights (choice1) as the default
 
