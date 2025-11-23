@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict
 
-ANNUAL_RISK_FREE_RATE = 0.0153
+ANNUAL_RISK_FREE_RATE = 0.0407 # based off current 2025 RFR
 TRADING_DAYS = 252
 
 def run_monte_carlo_simulation(
@@ -156,6 +156,8 @@ def run_monte_carlo_simulation(
     # ------------------------------------------
     rf_monthly = np.log1p(ANNUAL_RISK_FREE_RATE) / 12
     cash_growth = np.exp(np.cumsum(np.full((horizon, num_paths), rf_monthly), axis=0))
+    print("portfolio growth %:", np.mean(stock_growth * (1-cash_percent))/12)
+    print("cash growth %:", np.mean(cash_growth * cash_percent)/12)
 
     port_growth = (1 - cash_percent) * stock_growth + cash_percent * cash_growth
 
