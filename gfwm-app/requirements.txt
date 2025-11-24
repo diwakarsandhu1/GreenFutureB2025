@@ -25,3 +25,4 @@ tzdata==2024.2
 whitenoise==6.7.0
 scikit-learn==1.7.2
 matplotlib
+tensorflow
