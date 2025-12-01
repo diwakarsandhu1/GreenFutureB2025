@@ -1,278 +1,325 @@
 """
-autoencoder.py
+auto_encoder.py
 
-Feedforward Autoencoder anomaly detection on ESG features.
-Returns: { ticker: ae_anomaly_score } (higher = more anomalous)
+Enhanced Autoencoder anomaly detection module with:
+- Global BEST_AE_PARAMS
+- Fully parameterized model + training
+- Hyperparameter tuning function (K-Fold CV)
+- Baseline + tuned scoring outputs
+- Backward compatibility with your pipeline
 
-When run directly:
-- Trains/validates autoencoder
-- Computes reconstruction-error anomaly scores
-- Saves:
-    - Model (autoencoder.keras)
-    - Scaler (scaler.pkl)
-    - Training curves: ae_loss_curve.png
-    - Error distribution: ae_recon_error_distribution.png
-    - Top anomalies: ae_top_anomalies.csv
+This mirrors the structure used in pca.py and isolation_forest.py.
 """
 
+from __future__ import annotations
+
 import os
-import pickle
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-
-# TensorFlow / Keras
 import tensorflow as tf
 from tensorflow import keras
-from keras import layers, models, callbacks, regularizers
+from keras import layers, models, callbacks
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 
 
-# -------------------------------------------------------
-# Config
-# -------------------------------------------------------
-CSV_PATH = "../../preprocess_and_filter/preprocessed_refinitiv.csv"
-OUTPUT_DIR = "./outputs/"
-MODEL_PATH = "./outputs/autoencoder.keras"
-SCALER_PATH = "./outputs/scaler.pkl"
+# ============================================================
+# GLOBAL BEST PARAMETERS (updated by tuning)
+# ============================================================
 
-FEATURE_COLS = [
-    "environment",
-    "social",
-    "governance",
-    "human_rights",
-    "community",
-    "workforce",
-    "product_responsibility",
-    "shareholders",
-    "management",
-    "controversy",
-    "esg_combined",
-]
-
-SEED = 42
-tf.random.set_seed(SEED)
-np.random.seed(SEED)
+BEST_AE_PARAMS = {
+    "latent_dim": 5,
+    "hidden_units": 64,
+    "activation": "relu",       # "relu" | "leaky_relu"
+    "dropout": 0.0,
+    "epochs": 50,
+    "batch_size": 32,
+    "scaler": "standard",       # "standard" | "minmax" | "robust"
+    "learning_rate": 1e-3,
+    "seed": 42,
+}
 
 
-# -------------------------------------------------------
-# Data helpers
-# -------------------------------------------------------
-def load_data(path: str = CSV_PATH) -> pd.DataFrame:
+# ============================================================
+# Utility: seeds + scalers + activations
+# ============================================================
+
+def set_seeds(seed: int = 42):
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
+
+
+def get_scaler(name: str):
+    if name == "standard":
+        return StandardScaler()
+    if name == "minmax":
+        return MinMaxScaler()
+    if name == "robust":
+        return RobustScaler()
+    raise ValueError(f"Unknown scaler: {name}")
+
+
+def get_activation_layer(activation: str):
+    if activation == "relu":
+        return activation  # Keras accepts string
+    if activation == "leaky_relu":
+        return layers.LeakyReLU(alpha=0.01)
+    raise ValueError(f"Unknown activation: {activation}")
+
+
+# ============================================================
+# Data handling
+# ============================================================
+
+def load_data(path: str = "../../preprocess_and_filter/preprocessed_refinitiv.csv") -> pd.DataFrame:
     return pd.read_csv(path)
 
 
 def select_esg_features(df: pd.DataFrame):
-    df_clean = df.dropna(subset=FEATURE_COLS).copy()
-    X = df_clean[FEATURE_COLS].astype(float).values
+    feature_cols = [
+        "environment", "social", "governance", "human_rights", "community",
+        "workforce", "product_responsibility", "shareholders", "management",
+        "controversy", "esg_combined",
+    ]
+    df_clean = df.dropna(subset=feature_cols)
+    X = df_clean[feature_cols].copy()
     tickers = df_clean["ticker"].values
-    return X, tickers, df_clean
+    return X, tickers, feature_cols
 
 
-def scale_features(X: np.ndarray, scaler: StandardScaler | None = None):
-    if scaler is None:
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-    else:
-        X_scaled = scaler.transform(X)
+def scale_features(X: pd.DataFrame, scaler_name: str = None):
+    scaler_name = scaler_name or BEST_AE_PARAMS["scaler"]
+    scaler = get_scaler(scaler_name)
+    X_scaled = scaler.fit_transform(X)
     return X_scaled, scaler
 
 
-# -------------------------------------------------------
-# Model factory
-# -------------------------------------------------------
-def build_autoencoder(input_dim: int, latent_dim: int = 4, l2_reg: float = 1e-4):
-    """
-    Simple symmetric AE: input -> 8 -> latent -> 8 -> output
-    Uses L2 regularization + dropout for stability.
-    """
-    encoder = models.Sequential(
-        [
-            layers.Input(shape=(input_dim,)),
-            layers.Dense(8, activation="relu",
-                         kernel_regularizer=regularizers.l2(l2_reg)),
-            layers.Dropout(0.05),
-            layers.Dense(latent_dim, activation="relu",
-                         kernel_regularizer=regularizers.l2(l2_reg)),
-        ],
-        name="encoder",
-    )
+# ============================================================
+# Autoencoder model
+# ============================================================
 
-    decoder = models.Sequential(
-        [
-            layers.Input(shape=(latent_dim,)),
-            layers.Dense(8, activation="relu",
-                         kernel_regularizer=regularizers.l2(l2_reg)),
-            layers.Dropout(0.05),
-            layers.Dense(input_dim, activation="linear"),
-        ],
-        name="decoder",
-    )
-
-    inputs = layers.Input(shape=(input_dim,))
-    z = encoder(inputs)
-    outputs = decoder(z)
-    ae = models.Model(inputs, outputs, name="autoencoder")
-    ae.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
-               loss="mse")
-    return ae, encoder, decoder
-
-
-# -------------------------------------------------------
-# Training
-# -------------------------------------------------------
-def train_autoencoder(
-    X_scaled: np.ndarray,
-    val_split: float = 0.15,
-    epochs: int = 200,
-    batch_size: int = 32,
+def build_autoencoder(
+    input_dim: int,
+    latent_dim: int,
+    hidden_units: int,
+    activation: str = "relu",
+    dropout: float = 0.0,
+    learning_rate: float = 1e-3,
+    seed: int = 42,
 ):
-    X_train, X_val = train_test_split(
-        X_scaled, test_size=val_split, random_state=SEED, shuffle=True
+    set_seeds(seed)
+
+    act = get_activation_layer(activation)
+
+    model = models.Sequential([
+        layers.Input(shape=(input_dim,)),
+        layers.Dense(hidden_units),
+        act if isinstance(act, layers.Layer) else layers.Activation(act),
+        layers.Dropout(dropout),
+        layers.Dense(latent_dim),
+        act if isinstance(act, layers.Layer) else layers.Activation(act),
+        layers.Dense(hidden_units),
+        act if isinstance(act, layers.Layer) else layers.Activation(act),
+        layers.Dropout(dropout),
+        layers.Dense(input_dim, activation="linear"),
+    ])
+
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    model.compile(optimizer=optimizer, loss="mse")
+    return model
+
+
+# ============================================================
+# Core scoring
+# ============================================================
+
+def compute_autoencoder_scores(
+    X_scaled: np.ndarray,
+    latent_dim: int | None = None,
+    hidden_units: int | None = None,
+    activation: str | None = None,
+    dropout: float | None = None,
+    epochs: int | None = None,
+    batch_size: int | None = None,
+    learning_rate: float | None = None,
+    seed: int | None = None,
+):
+    """Train AE on X_scaled and return per-sample reconstruction errors and the model."""
+    params = BEST_AE_PARAMS.copy()
+    if latent_dim is not None: params["latent_dim"] = latent_dim
+    if hidden_units is not None: params["hidden_units"] = hidden_units
+    if activation is not None: params["activation"] = activation
+    if dropout is not None: params["dropout"] = dropout
+    if epochs is not None: params["epochs"] = epochs
+    if batch_size is not None: params["batch_size"] = batch_size
+    if learning_rate is not None: params["learning_rate"] = learning_rate
+    if seed is not None: params["seed"] = seed
+
+    set_seeds(params["seed"])
+
+    input_dim = X_scaled.shape[1]
+    ae = build_autoencoder(
+        input_dim=input_dim,
+        latent_dim=params["latent_dim"],
+        hidden_units=params["hidden_units"],
+        activation=params["activation"],
+        dropout=params["dropout"],
+        learning_rate=params["learning_rate"],
+        seed=params["seed"],
     )
 
-    ae, encoder, decoder = build_autoencoder(input_dim=X_scaled.shape[1])
+    es = callbacks.EarlyStopping(monitor="loss", patience=8, restore_best_weights=True)
+    ae.fit(X_scaled, X_scaled, epochs=params["epochs"], batch_size=params["batch_size"], verbose=0, callbacks=[es])
 
-    es = callbacks.EarlyStopping(
-        monitor="val_loss", patience=20, restore_best_weights=True
-    )
-    rlrop = callbacks.ReduceLROnPlateau(
-        monitor="val_loss", factor=0.5, patience=8, min_lr=1e-5
-    )
-
-    history = ae.fit(
-        X_train,
-        X_train,
-        validation_data=(X_val, X_val),
-        epochs=epochs,
-        batch_size=batch_size,
-        shuffle=True,
-        callbacks=[es, rlrop],
-        verbose=0,
-    )
-    return ae, history
+    reconstructed = ae.predict(X_scaled, verbose=0)
+    errors = np.mean((X_scaled - reconstructed) ** 2, axis=1)
+    return errors, ae
 
 
-# -------------------------------------------------------
-# Scoring
-# -------------------------------------------------------
-def compute_reconstruction_errors(ae: tf.keras.Model, X_scaled: np.ndarray) -> np.ndarray:
-    X_hat = ae.predict(X_scaled, verbose=0)
-    # Mean squared error per row = anomaly score
-    errors = np.mean((X_scaled - X_hat) ** 2, axis=1)
-    return errors
+# ============================================================
+# External API (defaults from BEST_AE_PARAMS, overridable)
+# ============================================================
 
-
-# -------------------------------------------------------
-# Public entrypoint (for pipeline)
-# -------------------------------------------------------
-def run_autoencoder(csv_path: str = CSV_PATH, save_outputs=True) -> dict[str, float]:
-    # 1) Load/select/scale
+def run_autoencoder(csv_path: str = "../../preprocess_and_filter/preprocessed_refinitiv.csv", **override_params):
     df = load_data(csv_path)
     X, tickers, _ = select_esg_features(df)
-    X_scaled, scaler = scale_features(X)
+    scaler_name = override_params.get("scaler", BEST_AE_PARAMS["scaler"])
+    X_scaled, _ = scale_features(X, scaler_name)
 
-    # 2) Train
-    ae, history = train_autoencoder(X_scaled)
-
-    # 3) Score
-    errors = compute_reconstruction_errors(ae, X_scaled)
-    anomaly_dict = {tickers[i]: float(errors[i]) for i in range(len(tickers))}
-
-    # Only save if explicitly requested
-    if save_outputs:
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        ae.save(MODEL_PATH)
-        with open(SCALER_PATH, "wb") as f:
-            pickle.dump(scaler, f)
-
-        save_training_plot(history)
-        save_error_distribution(errors)
-
-        pd.DataFrame({
-            "ticker": tickers,
-            "ae_recon_error": errors
-        }).sort_values("ae_recon_error", ascending=False).to_csv(
-            os.path.join(OUTPUT_DIR, "ae_top_anomalies.csv"), index=False
-        )
+    errors, ae_model = compute_autoencoder_scores(X_scaled, **override_params)
+    return {tickers[i]: float(errors[i]) for i in range(len(tickers))}
 
 
-    return anomaly_dict
+# ============================================================
+# Hyperparameter tuning (K-Fold CV on validation error)
+# ============================================================
+
+def tune_autoencoder(
+    X: pd.DataFrame | np.ndarray,
+    latent_dims: list[int] | None = None,
+    hidden_units_list: list[int] | None = None,
+    dropout_values: list[float] | None = None,
+    activation_list: list[str] | None = None,
+    epochs_list: list[int] | None = None,
+    batch_sizes: list[int] | None = None,
+    scaler_options: list[str] | None = None,
+    learning_rates: list[float] | None = None,
+    n_splits: int = 5,
+    update_global: bool = True,
+    seed: int | None = None,
+):
+    """Grid-search style tuning minimizing mean validation reconstruction error."""
+
+    latent_dims = latent_dims or [3, 5, 8]
+    hidden_units_list = hidden_units_list or [32, 64, 128]
+    dropout_values = dropout_values or [0.0, 0.1, 0.2]
+    activation_list = activation_list or ["relu", "leaky_relu"]
+    epochs_list = epochs_list or [40, 60]
+    batch_sizes = batch_sizes or [16, 32]
+    scaler_options = scaler_options or ["standard", "minmax", "robust"]
+    learning_rates = learning_rates or [1e-3, 5e-4]
+
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+    import itertools
+    combos = list(itertools.product(
+        latent_dims, hidden_units_list, dropout_values, activation_list,
+        epochs_list, batch_sizes, scaler_options, learning_rates
+    ))
+
+    results = []
+
+    for (ld, hu, dr, act, ep, bs, scaler_name, lr) in combos:
+        X_scaled, _ = scale_features(X, scaler_name)
+        fold_losses = []
+
+        for tr_idx, va_idx in kf.split(X_scaled):
+            X_tr, X_va = X_scaled[tr_idx], X_scaled[va_idx]
+
+            model = build_autoencoder(
+                input_dim=X_tr.shape[1],
+                latent_dim=ld,
+                hidden_units=hu,
+                activation=act,
+                dropout=dr,
+                learning_rate=lr,
+                seed=BEST_AE_PARAMS["seed"] if seed is None else seed,
+            )
+
+            es = callbacks.EarlyStopping(monitor="val_loss", patience=6, restore_best_weights=True)
+            model.fit(X_tr, X_tr, epochs=ep, batch_size=bs, verbose=0, validation_data=(X_va, X_va), callbacks=[es])
+
+            recon = model.predict(X_va, verbose=0)
+            fold_losses.append(float(np.mean((X_va - recon) ** 2)))
+
+        results.append({
+            "latent_dim": ld,
+            "hidden_units": hu,
+            "dropout": dr,
+            "activation": act,
+            "epochs": ep,
+            "batch_size": bs,
+            "scaler": scaler_name,
+            "learning_rate": lr,
+            "val_error_mean": float(np.mean(fold_losses)),
+            "val_error_std": float(np.std(fold_losses)),
+        })
+
+    results_df = pd.DataFrame(results)
+    best_row = results_df.loc[results_df["val_error_mean"].idxmin()]
+
+    best_params = {
+        "latent_dim": int(best_row["latent_dim"]),
+        "hidden_units": int(best_row["hidden_units"]),
+        "activation": str(best_row["activation"]),
+        "dropout": float(best_row["dropout"]),
+        "epochs": int(best_row["epochs"]),
+        "batch_size": int(best_row["batch_size"]),
+        "scaler": str(best_row["scaler"]),
+        "learning_rate": float(best_row["learning_rate"]),
+    }
+
+    if update_global:
+        BEST_AE_PARAMS.update(best_params)
+
+    return results_df, best_params
 
 
-# -------------------------------------------------------
-# Visualization helpers
-# -------------------------------------------------------
-def save_training_plot(history, out_path=os.path.join(OUTPUT_DIR, "ae_loss_curve.png")):
+# ============================================================
+# Visualization
+# ============================================================
+
+def save_autoencoder_plots(errors: np.ndarray, output_dir: str = "./outputs/"):
+    os.makedirs(output_dir, exist_ok=True)
     plt.figure(figsize=(8, 5))
-    plt.plot(history.history["loss"], label="train")
-    plt.plot(history.history["val_loss"], label="val")
-    plt.title("Autoencoder Training Curve (MSE)")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(out_path)
-    plt.close()
-
-
-def save_error_distribution(errors, out_path=os.path.join(OUTPUT_DIR, "ae_recon_error_distribution.png")):
-    plt.figure(figsize=(8, 5))
-    plt.hist(errors, bins=40, alpha=0.8)
-    plt.title("Autoencoder Reconstruction Error Distribution\n(Higher = More Anomalous)")
-    plt.xlabel("Reconstruction Error (MSE)")
+    plt.hist(errors, bins=40, color="purple", alpha=0.8)
+    plt.title("Autoencoder Reconstruction Error Distribution")
+    plt.xlabel("Reconstruction Error")
     plt.ylabel("Frequency")
     plt.grid(axis="y")
     plt.tight_layout()
-    plt.savefig(out_path)
+    plt.savefig(os.path.join(output_dir, "autoencoder_error_distribution.png"))
     plt.close()
 
 
-# -------------------------------------------------------
+# ============================================================
 # Direct execution
-# -------------------------------------------------------
+# ============================================================
+
 if __name__ == "__main__":
-    print("Training Autoencoder and generating outputs...")
+    print("Running Autoencoder anomaly detection + generating plot…")
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    df = load_data()
+    X, tickers, _ = select_esg_features(df)
+    X_scaled, _ = scale_features(X, BEST_AE_PARAMS["scaler"])
 
-    # Data
-    df = load_data(CSV_PATH)
-    X, tickers, df_clean = select_esg_features(df)
-    X_scaled, scaler = scale_features(X)
+    errors, model = compute_autoencoder_scores(X_scaled)
 
-    # Train
-    ae, history = train_autoencoder(X_scaled)
+    save_autoencoder_plots(errors, output_dir="./outputs/")
+    print("✔ Plots saved to ./outputs/")
 
-    # Score
-    errors = compute_reconstruction_errors(ae, X_scaled)
-    anomaly_dict = {tickers[i]: float(errors[i]) for i in range(len(tickers))}
-
-    # Persist artifacts
-    ae.save(MODEL_PATH)
-    with open(SCALER_PATH, "wb") as f:
-        pickle.dump(scaler, f)
-
-    # Outputs
-    save_training_plot(history)
-    save_error_distribution(errors)
-    pd.DataFrame({"ticker": tickers, "ae_recon_error": errors}).sort_values(
-        "ae_recon_error", ascending=False
-    ).to_csv(os.path.join(OUTPUT_DIR, "ae_top_anomalies.csv"), index=False)
-
-    print("✔ Saved:")
-    print(f"  - Model:   {MODEL_PATH}")
-    print(f"  - Scaler:  {SCALER_PATH}")
-    print(f"  - Curves:  {os.path.join(OUTPUT_DIR, 'ae_loss_curve.png')}")
-    print(f"  - Errors:  {os.path.join(OUTPUT_DIR, 'ae_recon_error_distribution.png')}")
-    print(f"  - CSV:     {os.path.join(OUTPUT_DIR, 'ae_top_anomalies.csv')}")
-
-    # Preview
-    print("\nSample anomalies (top 10):")
-    for t, s in list(
-        dict(sorted(anomaly_dict.items(), key=lambda kv: kv[1], reverse=True)).items()
-    )[:10]:
+    print("Sample AE anomaly scores (first 10):")
+    for t, s in list({tickers[i]: float(errors[i]) for i in range(len(tickers))}.items())[:10]:
         print(f"{t}: {s:.6f}")
