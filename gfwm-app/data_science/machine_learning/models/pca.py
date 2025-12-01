@@ -173,6 +173,9 @@ def tune_pca_hyperparameters(
     if k_values is None:
         k_values = list(range(2, 16))
 
+    max_k = min(X.shape[1], X.shape[0])
+    k_values = [k for k in k_values if k <= max_k]
+
     if whiten_options is None:
         whiten_options = [False, True]
 
