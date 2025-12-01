@@ -97,15 +97,17 @@ def save_plots(pca, X_pca, reconstruction_errors, output_path):
 
     # ----- 1. Explained Variance Plot -----
     plt.figure(figsize=(8, 5))
-    plt.plot(np.cumsum(pca.explained_variance_ratio_), marker="o")
+    cum_var = np.cumsum(pca.explained_variance_ratio_)
+    components = np.arange(1, len(cum_var) + 1)
+    plt.plot(components, cum_var, marker="o")
     plt.title("PCA Explained Variance (Cumulative)")
     plt.xlabel("Number of Components")
     plt.ylabel("Cumulative Explained Variance")
+    plt.xticks(components)
     plt.grid(True)
     plt.tight_layout()
     plt.savefig(os.path.join(output_path, "pca_explained_variance.png"))
     plt.close()
-
 
     # ----- 2. Scatter Plot of First Two PCA Components -----
     plt.figure(figsize=(7, 6))
