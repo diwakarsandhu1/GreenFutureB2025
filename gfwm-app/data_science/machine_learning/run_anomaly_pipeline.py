@@ -132,7 +132,7 @@ def run_anomaly_pipeline(csv_path: str = DEFAULT_CSV,
     # Run models
     pca = run_pca_anomaly_detection(csv_path)
     iso = run_isolation_forest(csv_path)
-    ae  = run_autoencoder(csv_path, save_outputs=False)
+    ae  = run_autoencoder(csv_path)
 
     # Merge
     df = _align(pca, iso, ae)
@@ -281,11 +281,11 @@ if __name__ == "__main__":
     print(" - Isolation Forest...")
     iso = run_isolation_forest(DEFAULT_CSV)
     print(" - Autoencoder...")
-    ae  = run_autoencoder(DEFAULT_CSV, save_outputs=False)
+    ae  = run_autoencoder(DEFAULT_CSV)
 
     # 2) Align / composite
     df = _align(pca, iso, ae)
-    df["composite_score_raw"] = _combine(df, weights=(1/3, 1/3, 1/3))
+    df["composite_score_raw"] = _combine(df, weights=(0.50, 0.40, 0.10))
     df["composite_score"] = _minmax(df["composite_score_raw"])
 
     # 3) Attach returns (for scatter)
@@ -325,6 +325,22 @@ if __name__ == "__main__":
         "ae_mean": float(df["ae_score"].mean()),
         "comp_mean_0to1": float(df["composite_score"].mean()),
     }
+
+    top_pct = 0.05
+    n = int(len(df) * top_pct)
+
+    top_pca = set(df.nlargest(n, "pca_score")["ticker"])
+    top_if  = set(df.nlargest(n, "if_score")["ticker"])
+    top_ae  = set(df.nlargest(n, "ae_score")["ticker"])
+
+    agreement = {
+        "PCA ∩ IF": len(top_pca & top_if),
+        "PCA ∩ AE": len(top_pca & top_ae),
+        "IF ∩ AE": len(top_if & top_ae),
+        "PCA ∩ IF ∩ AE": len(top_pca & top_if & top_ae),
+    }
+    print(agreement)
+
 
     report_path = _report(
         stats,

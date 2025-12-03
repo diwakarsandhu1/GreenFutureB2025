@@ -1,0 +1,2 @@
+latent_dim,hidden_units,dropout,activation,epochs,batch_size,scaler,learning_rate,val_error_mean
+3,32,0.0,relu,20,32,standard,0.001,0.30498642672843046

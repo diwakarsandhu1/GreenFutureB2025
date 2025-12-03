@@ -25,11 +25,11 @@ from sklearn.model_selection import KFold
 # ============================================================
 
 BEST_ISO_PARAMS = {
-    "contamination": 0.05,
+    "contamination": 0.03,
     "n_estimators": 300,
-    "max_samples": "auto",
-    "max_features": 1.0,
-    "bootstrap": False,
+    "max_samples": 1.0,
+    "max_features": 0.5,
+    "bootstrap": True,
     "scaler": "standard",
     "random_state": 42,
 }

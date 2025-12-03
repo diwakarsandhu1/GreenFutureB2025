@@ -30,11 +30,11 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 # ============================================================
 
 BEST_AE_PARAMS = {
-    "latent_dim": 5,
-    "hidden_units": 64,
+    "latent_dim": 3,
+    "hidden_units": 32,
     "activation": "relu",       # "relu" | "leaky_relu"
     "dropout": 0.0,
-    "epochs": 50,
+    "epochs": 20,
     "batch_size": 32,
     "scaler": "standard",       # "standard" | "minmax" | "robust"
     "learning_rate": 1e-3,
@@ -126,7 +126,7 @@ def build_autoencoder(
         layers.Dense(input_dim, activation="linear"),
     ])
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    optimizer = keras.optimizers.legacy.Adam(learning_rate=learning_rate)
     model.compile(optimizer=optimizer, loss="mse")
     return model
 
@@ -197,39 +197,49 @@ def run_autoencoder(csv_path: str = "../../preprocess_and_filter/preprocessed_re
 # ============================================================
 
 def tune_autoencoder(
-    X: pd.DataFrame | np.ndarray,
-    latent_dims: list[int] | None = None,
-    hidden_units_list: list[int] | None = None,
-    dropout_values: list[float] | None = None,
-    activation_list: list[str] | None = None,
-    epochs_list: list[int] | None = None,
-    batch_sizes: list[int] | None = None,
-    scaler_options: list[str] | None = None,
-    learning_rates: list[float] | None = None,
-    n_splits: int = 5,
-    update_global: bool = True,
-    seed: int | None = None,
+    X,
+    latent_dims=None,
+    hidden_units_list=None,
+    dropout_values=None,
+    activation_list=None,
+    epochs_list=None,
+    batch_sizes=None,
+    scaler_options=None,
+    learning_rates=None,
+    n_splits=5,
+    update_global=True,
+    seed=None,
+    fast_mode=True,
 ):
-    """Grid-search style tuning minimizing mean validation reconstruction error."""
+    """Grid-search hyperparameter tuning minimizing validation reconstruction error."""
 
-    latent_dims = latent_dims or [3, 5, 8]
-    hidden_units_list = hidden_units_list or [32, 64, 128]
-    dropout_values = dropout_values or [0.0, 0.1, 0.2]
-    activation_list = activation_list or ["relu", "leaky_relu"]
-    epochs_list = epochs_list or [40, 60]
-    batch_sizes = batch_sizes or [16, 32]
-    scaler_options = scaler_options or ["standard", "minmax", "robust"]
-    learning_rates = learning_rates or [1e-3, 5e-4]
+    if fast_mode:
+        latent_dims = [3]
+        hidden_units_list = [32]
+        dropout_values = [0.0]
+        activation_list = ["relu"]
+        epochs_list = [20]
+        batch_sizes = [32]
+        scaler_options = ["standard"]
+        learning_rates = [1e-3]
+    else:
+        latent_dims = latent_dims or [3, 5]
+        hidden_units_list = hidden_units_list or [32, 64]
+        dropout_values = dropout_values or [0.0, 0.1]
+        activation_list = activation_list or ["relu", "leaky_relu"]
+        epochs_list = epochs_list or [20, 40]
+        batch_sizes = batch_sizes or [16, 32]
+        scaler_options = scaler_options or ["standard", "minmax"]
+        learning_rates = learning_rates or [1e-3, 5e-4]
 
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    results = []
 
     import itertools
     combos = list(itertools.product(
         latent_dims, hidden_units_list, dropout_values, activation_list,
         epochs_list, batch_sizes, scaler_options, learning_rates
     ))
-
-    results = []
 
     for (ld, hu, dr, act, ep, bs, scaler_name, lr) in combos:
         X_scaled, _ = scale_features(X, scaler_name)
@@ -248,7 +258,7 @@ def tune_autoencoder(
                 seed=BEST_AE_PARAMS["seed"] if seed is None else seed,
             )
 
-            es = callbacks.EarlyStopping(monitor="val_loss", patience=6, restore_best_weights=True)
+            es = callbacks.EarlyStopping(monitor="val_loss", patience=4, restore_best_weights=True)
             model.fit(X_tr, X_tr, epochs=ep, batch_size=bs, verbose=0, validation_data=(X_va, X_va), callbacks=[es])
 
             recon = model.predict(X_va, verbose=0)
@@ -264,7 +274,6 @@ def tune_autoencoder(
             "scaler": scaler_name,
             "learning_rate": lr,
             "val_error_mean": float(np.mean(fold_losses)),
-            "val_error_std": float(np.std(fold_losses)),
         })
 
     results_df = pd.DataFrame(results)

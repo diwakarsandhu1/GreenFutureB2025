@@ -26,9 +26,9 @@ from sklearn.model_selection import KFold
 # ============================================================
 
 BEST_PCA_PARAMS = {
-    "n_components": 5,
+    "n_components": 11,
     "whiten": False,
-    "scaler": "standard"   # "standard", "minmax", "robust"
+    "scaler": "minmax"   # "standard", "minmax", "robust"
 }
 
 
