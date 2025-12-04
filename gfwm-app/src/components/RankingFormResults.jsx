@@ -9,6 +9,7 @@ import StockSearchModal from "./StockSearchModal";
 import ComparisonTable from "./ComparisonTable";
 import PieChart from "./PieChart";
 import TimeseriesChart from "./TimeseriesChart";
+import CircularProgress from "@mui/material/CircularProgress";
 
 import MonteCarlo from "./MonteCarlo";
 
@@ -20,6 +21,7 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
   const [compatibilityScores, setCompatibilityScores] = useState({});
   const [portfolioWeights, setPortfolioWeights] = useState({});
   const [initialized, setInitialized] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
 
   // unpack server response
@@ -468,6 +470,7 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
   //ADD and REMOVE from portfolio
 
   const updatePortfolioWeights = (tickers) => {
+    setIsOptimizing(true);
     // package up ticker and compatibility columns to send to server
     const clientPortfolio = tickers.map((ticker) => {
       // Find the object in portfolio that matches the ticker
@@ -533,6 +536,9 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
           timeseries: portfolioTimeseries,
         });
       })
+      .finally(() => {
+        setIsOptimizing(false);
+      })
       .catch((error) => {
         console.error("Error:", error);
       });
@@ -571,9 +577,24 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
   };
 
   return (
-    // grey out portfolio data if outdated, blur when modal is open
-    <div>
-      <div className={`${isPortfolioOutdated ? "opacity-50" : ""} ${isModalOpen ? "blur-sm" : ""} transition`}>
+    <div className="relative">
+
+      {/* === Spinner Overlay (shows above everything) === */}
+      {isOptimizing && weighingScheme == "Optimized Markowitz" && (
+        <div className="absolute top-4 left-0 right-0 flex justify-center z-50">
+          <CircularProgress size={80} thickness={4} color="success" />
+        </div>
+      )}
+
+      {/* === Existing Content (blurred during optimization) === */}
+      <div
+        className={`
+          ${isPortfolioOutdated ? "opacity-50" : ""}
+          ${isModalOpen ? "blur-sm" : ""}
+          ${isOptimizing && weighingScheme == "Optimized Markowitz" ? "blur-sm pointer-events-none"  : ""}
+          transition
+        `}
+      >
         <h2 className="text-2xl font-bold text-gray-800">Portfolio Summary</h2>
 
         {/* portfolio summary statistics */}

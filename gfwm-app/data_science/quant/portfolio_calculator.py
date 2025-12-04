@@ -8,7 +8,10 @@ import data_science.quant.optimized_markowitz.bootstrapped_markowitz as opt_mark
 ANNUAL_RISK_FREE_RATE = 0.0153
 
 def map_risk_appetite_to_cash_percent(risk_appetite):
-    return 0.5 - 2 * risk_appetite
+    # risk_appetite ∈ [0, 20]
+    # 0 → 80% cash, 20 → 0% cash
+    return 0.80 - 4 * risk_appetite
+
 
 def calculate_portfolio(ticker_compatibility_df, cash_percent, use_baseline_markowitz, use_optimized_markowitz, return_summary_statistics = True):
 

@@ -118,8 +118,7 @@ def update_weights(request):
         # TODO update to process ticker and compatibility columns
         client_portfolio = pd.DataFrame(update_request_dict['client_portfolio'])
         
-        # map risk appetite (0 - 0.2) to cash percent (50% - 10%)
-        cash_percent = 0.5 - 2 * update_request_dict['risk_appetite']
+        cash_percent = pc.map_risk_appetite_to_cash_percent(update_request_dict['risk_appetite'])
         
         use_baseline_markowitz = (update_request_dict['weighing_scheme'] == 'Baseline Markowitz')
         use_optimized_markowitz = (update_request_dict['weighing_scheme'] == 'Optimized Markowitz')
@@ -268,6 +267,7 @@ def simulate(request):
             client_responses['advisor_fee'],
             client_responses['portfolio_weighing_scheme'],
             client_responses['rebalancing_rule'],
+            client_responses['forecast_mode'],
         )
 
         return JsonResponse(results, safe=False, status=200)
