@@ -1,7 +1,7 @@
 import React from "react";
 import { useEffect, useState } from "react";
 
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from "chart.js";
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip as ChartTooltip, Legend } from "chart.js";
 
 import Papa from "papaparse";
 import StockSearchModal from "./StockSearchModal";
@@ -9,10 +9,15 @@ import StockSearchModal from "./StockSearchModal";
 import ComparisonTable from "./ComparisonTable";
 import PieChart from "./PieChart";
 import TimeseriesChart from "./TimeseriesChart";
+import CircularProgress from "@mui/material/CircularProgress";
 
 import MonteCarlo from "./MonteCarlo";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+import ReportProblemIcon from "@mui/icons-material/ReportProblem";
+import Tooltip from "@mui/material/Tooltip";
+
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, ChartTooltip, Legend);
 
 const RankingFormResults = ({ serverResponse, formResults }) => {
   //console.log('received props ', serverResponse, formResults);
@@ -20,6 +25,7 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
   const [compatibilityScores, setCompatibilityScores] = useState({});
   const [portfolioWeights, setPortfolioWeights] = useState({});
   const [initialized, setInitialized] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
 
   // unpack server response
@@ -468,6 +474,7 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
   //ADD and REMOVE from portfolio
 
   const updatePortfolioWeights = (tickers) => {
+    setIsOptimizing(true);
     // package up ticker and compatibility columns to send to server
     const clientPortfolio = tickers.map((ticker) => {
       // Find the object in portfolio that matches the ticker
@@ -533,6 +540,9 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
           timeseries: portfolioTimeseries,
         });
       })
+      .finally(() => {
+        setIsOptimizing(false);
+      })
       .catch((error) => {
         console.error("Error:", error);
       });
@@ -570,10 +580,85 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
     setSelectedTicker(ticker);
   };
 
+  // === ANOMALY SCORE STATE ===
+const [anomalyScores, setAnomalyScores] = useState({});
+const [anomalyMedian, setAnomalyMedian] = useState(null);
+
+  // Load composite anomaly CSV and compute median
+  useEffect(() => {
+    const loadAnomalies = async () => {
+      try {
+        const anomalyCSV = await fetch("./composite_dict_only.csv");
+        const text = await anomalyCSV.text();
+
+        const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+
+        const scores = {};
+        const scoreArray = [];
+
+        parsed.data.forEach(row => {
+          const ticker = row.ticker;
+          const score = Number(row.composite_score);
+          if (!isNaN(score)) {
+            scores[ticker] = score;
+            scoreArray.push(score);
+          }
+        });
+
+        // Compute median
+        scoreArray.sort((a, b) => a - b);
+        const mid = Math.floor(scoreArray.length / 2);
+        const median =
+          scoreArray.length % 2 === 0
+            ? (scoreArray[mid - 1] + scoreArray[mid]) / 2
+            : scoreArray[mid];
+
+        setAnomalyScores(scores);
+        setAnomalyMedian(median);
+      } catch (err) {
+        console.error("Error loading anomaly scores:", err);
+      }
+    };
+
+    loadAnomalies();
+  }, []);
+
+  const getAnomalyFlag = (ticker) => {
+    if (!anomalyMedian || !anomalyScores[ticker]) return null;
+
+    const score = anomalyScores[ticker];
+
+    if (score <= anomalyMedian) return null; // no flag
+
+    const pctAbove = ((score - anomalyMedian) / anomalyMedian) * 100;
+
+    return {
+      score,
+      pctAbove: pctAbove.toFixed(1),
+      median: anomalyMedian.toFixed(3),
+    };
+  };
+
+
   return (
-    // grey out portfolio data if outdated, blur when modal is open
-    <div>
-      <div className={`${isPortfolioOutdated ? "opacity-50" : ""} ${isModalOpen ? "blur-sm" : ""} transition`}>
+    <div className="relative">
+
+      {/* === Spinner Overlay (shows above everything) === */}
+      {isOptimizing && weighingScheme == "Optimized Markowitz" && (
+        <div className="absolute top-4 left-0 right-0 flex justify-center z-50">
+          <CircularProgress size={80} thickness={4} color="success" />
+        </div>
+      )}
+
+      {/* === Existing Content (blurred during optimization) === */}
+      <div
+        className={`
+          ${isPortfolioOutdated ? "opacity-50" : ""}
+          ${isModalOpen ? "blur-sm" : ""}
+          ${isOptimizing && weighingScheme == "Optimized Markowitz" ? "blur-sm pointer-events-none"  : ""}
+          transition
+        `}
+      >
         <h2 className="text-2xl font-bold text-gray-800">Portfolio Summary</h2>
 
         {/* portfolio summary statistics */}
@@ -713,7 +798,39 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
                       />
                     </td>
 
-                    <td className="py-1 px-2 border-b border-gray-300">{item.ticker}</td>
+                    <td className="py-1 px-2 border-b border-gray-300">
+                      <div className="flex items-center justify-between w-full">
+                        {/* Left: Ticker text */}
+                        <span>{item.ticker}</span>
+
+                        {/* Right: Anomaly flag (if any) */}
+                        {(() => {
+                          const flag = getAnomalyFlag(item.ticker);
+                          if (!flag) return null;
+
+                          return (
+                            <Tooltip
+                              title={
+                                <div className="text-left">
+                                  <div className="font-semibold" style={{ color: "#c9a227"}}>Potential Greenwashing</div>
+                                  <div>
+                                    Anomaly score of <b>{flag.score.toFixed(3)}</b> is{" "}
+                                    <b>{flag.pctAbove}%</b> above the median anomaly score of{" "}
+                                    <b>{flag.median}</b>.
+                                  </div>
+                                </div>
+                              }
+                              placement="right"
+                              arrow
+                            >
+                              <ReportProblemIcon sx={{ color: "#c9a227", fontSize: 18 }} />
+                            </Tooltip>
+                          );
+                        })()}
+                      </div>
+                    </td>
+
+
                     <td className="py-1 px-2 border-b border-gray-300">{item.name}</td>
                     <td className="py-1 px-2 border-b border-gray-300">{(item.annual_return * 100).toFixed(2)}%</td>
                     <td className="py-1 px-2 border-b border-gray-300">{(item.volatility * 100).toFixed(2)}%</td>

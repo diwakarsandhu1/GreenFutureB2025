@@ -208,7 +208,7 @@ const RankingForm = () => {
         <button type="submit" className="hover:opacity-75 bg-gfwmDarkGreen text-white px-4 py-2 rounded mb-4">
           Get Results
         </button>{" "}
-        {loading && <CircularProgress />}
+        {loading && <CircularProgress color="success" size={50} thickness={4} />}
         {/* Portfolio preferences section */}
         <div className="mb-8">
 
@@ -238,7 +238,7 @@ const RankingForm = () => {
                   onTouchEnd={handleSliderRelease} // For touch devices
                   className="mx-4 w-full h-2 appearance-none bg-gray-300 rounded-full slider-thumb"
                 />
-                <span className="text-gray-600 text-lg whitespace-nowrap">Growth</span>
+                <span className="text-gray-600 text-lg whitespace-nowrap">Agressive</span>
                 {/* <div>Selected Value: {riskSlider}%</div> */}
               </div>
             </div>
