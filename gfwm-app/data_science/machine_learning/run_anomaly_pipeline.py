@@ -341,6 +341,15 @@ if __name__ == "__main__":
     }
     print(agreement)
 
+        # --- Save dictionary {ticker: composite_score} as its own CSV ---
+    composite_dict = {t: float(s) for t, s in zip(df["ticker"], df["composite_score"])}
+
+    dict_out_path = os.path.join(COMPOSITE_OUTPUT_DIR, "composite_dict_only.csv")
+    pd.DataFrame(composite_dict.items(), columns=["ticker", "composite_score"]) \
+        .to_csv(dict_out_path, index=False)
+
+    print(f"Saved dictionary-only composite scores to: {dict_out_path}")
+
 
     report_path = _report(
         stats,
