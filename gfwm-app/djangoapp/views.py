@@ -221,13 +221,13 @@ def update_risk(request):
         
         client_portfolio['weight'] = client_portfolio['weight'] * scaling_factor
         
-        portfolio_timeseries, dates, portfolio_max_dd = pc.portfolio_history(client_portfolio[['ticker','weight']].set_index('ticker', drop = True),
-                                                                          include_spy=False)
+        spy_timeseries, portfolio_timeseries, dates, spy_max_dd, portfolio_max_dd = pc.portfolio_history(client_portfolio[['ticker','weight']].set_index('ticker', drop = True),
+                                                                          include_spy=True)
         
         #calculate summary statistics   
         
         portfolio_return, portfolio_volatility, portfolio_sharpe = pc.calculate_summary_statistics(portfolio_timeseries, return_as_range=True)
-        
+        spy_return, spy_volatility, spy_sharpe = pc.calculate_summary_statistics(spy_timeseries, return_as_range=False)
              
         summary_statistics = {            
             "portfolio_return_range": portfolio_return,
@@ -239,6 +239,12 @@ def update_risk(request):
             
             "portfolio_timeseries": portfolio_timeseries[::5],
             "timeseries_dates": dates[::5],
+
+            "spy_return": spy_return,
+            "spy_volatility": spy_volatility,
+            "spy_sharpe": spy_sharpe,
+            "spy_max_dd": spy_max_dd,
+            "spy_timeseries": spy_timeseries[::5],
         }
         
         # return format for updated_portfolio: {ticker: weight, ticker: weight etc}

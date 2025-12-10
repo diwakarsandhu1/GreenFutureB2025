@@ -181,6 +181,12 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
               portfolio_sharpe: portfolioSharpe,
               portfolio_max_dd: portfolioMaxDD,
               portfolio_timeseries: portfolioTimeseries,
+              spy_return: spyReturn,
+              spy_volatility: spyVolatility,
+              spy_sharpe: spySharpe,
+              spy_max_dd: spyMaxDD,
+              spy_timeseries: spyTimeseries,
+              timeseries_dates: timeseriesDates,
             } = updatedSummaryStatistics;
 
             setPortfolioSummaryStatistics({
@@ -192,6 +198,14 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
               maxDD: portfolioMaxDD,
               timeseries: portfolioTimeseries,
             });
+            setSP500SummaryStatistics({
+              averageReturn: spyReturn,
+              volatility: spyVolatility,
+              sharpe: spySharpe,
+              maxDD: spyMaxDD,
+              timeseries: spyTimeseries,
+              timeseriesDates,
+            })
           })
           .catch((error) => {
             console.error("Error:", error);
