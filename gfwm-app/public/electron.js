@@ -12,7 +12,14 @@ function createWindow() {
       nodeIntegration: true,
     }
   });
-  win.loadFile(path.join(__dirname,  'index.html'));
+  
+  const isDev = !app.isPackaged;
+
+  if (isDev) {
+    win.loadURL("http://localhost:3000");
+  } else {
+    win.loadFile(path.join(__dirname, "index.html"));
+  }
 
 
 
