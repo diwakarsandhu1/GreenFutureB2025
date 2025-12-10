@@ -289,15 +289,16 @@ def run_monte_carlo_simulation(
 
     spy_rand = spy_mu_monthly_log + spy_sigma_monthly * z_spy
     spy_growth = np.exp(np.cumsum(spy_rand, axis=0))
+    spy_growth_adjusted = (1 - cash_percent) * spy_growth + cash_percent * cash_growth
 
-    pct_spy = lambda q: np.percentile(spy_growth, q, axis=1).tolist()
+    pct_spy = lambda q: np.percentile(spy_growth_adjusted, q, axis=1).tolist()
 
     spy_monthly_returns = np.zeros((horizon, num_paths))
-    spy_monthly_returns[0] = spy_growth[0] - 1.0
+    spy_monthly_returns[0] = spy_growth_adjusted[0] - 1.0
     for t in range(1, horizon):
-        spy_monthly_returns[t] = spy_growth[t] / spy_growth[t-1] - 1.0
+        spy_monthly_returns[t] = spy_growth_adjusted[t] / spy_growth_adjusted[t-1] - 1.0
 
-    spy_annualized_paths = spy_growth[-1]**(1.0 / years) - 1.0
+    spy_annualized_paths = spy_growth_adjusted[-1]**(1.0 / years) - 1.0
 
     spy_mean_annual = float(np.mean(spy_annualized_paths))
     spy_monthly_vol = np.std(spy_monthly_returns.flatten())

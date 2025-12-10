@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from "react";
 import RankingFormResults from "./RankingFormResults";
 import DragAndDrop from "./DragAndDrop";
 import CircularProgress from "@mui/material/CircularProgress";
+import Tooltip from "@mui/material/Tooltip";
 
 // factors to get answers for:
 // environment,
@@ -151,9 +152,12 @@ const RankingForm = () => {
       });
   };
 
+  const [liveRisk, setLiveRisk] = useState(riskSlider);
+
   const handleSliderChange = (e) => {
-    riskSliderTemp.current = e.target.value; // Update temp value on slider movement
-    console.log("Slider moving:", riskSliderTemp.current); // Debugging
+    const val = Number(e.target.value);
+    riskSliderTemp.current = val;
+    setLiveRisk(val);
   };
 
   const handleSliderRelease = () => {
@@ -162,6 +166,9 @@ const RankingForm = () => {
     setRiskSliderValue(newValue); // Commit the value to state
   };
 
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState(((riskSlider/20) * 0.96 + 0.03) * 100 + "%");
+  
   return (
     <div>
       <form onSubmit={handleSubmit} className="ranking-form">
@@ -226,20 +233,49 @@ const RankingForm = () => {
               </h3>
 
               {/* risk slider */}
-              <div className="w-3/4 flex items-center space-x-4">
+              <div className="relative w-3/4 flex items-center space-x-4">
                 <span className="text-gray-600 text-lg whitespace-nowrap">Conservative</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="20"
-                  defaultValue={riskSlider}
-                  onChange={handleSliderChange} // Capture every slider movement
-                  onMouseUp={handleSliderRelease} // For desktop devices
-                  onTouchEnd={handleSliderRelease} // For touch devices
-                  className="mx-4 w-full h-2 appearance-none bg-gray-300 rounded-full slider-thumb"
-                />
-                <span className="text-gray-600 text-lg whitespace-nowrap">Agressive</span>
-                {/* <div>Selected Value: {riskSlider}%</div> */}
+                <div
+                  className="relative w-full"
+                  onMouseEnter={() => setShowTooltip(true)}
+                  onMouseLeave={() => setShowTooltip(false)}
+                >
+                  <input
+                    type="range"
+                    min="0"
+                    max="20"
+                    step='0.25'
+                    defaultValue={riskSlider}
+                    onChange={(e) => {
+                      handleSliderChange(e);
+                      const percent = e.target.value / 20;
+                      const corrected = percent * 0.96 + 0.03;
+                      setTooltipPos(corrected * 100 + "%");
+                      setShowTooltip(true);
+                    }}
+                    onMouseUp={() => {
+                      handleSliderRelease();}}
+                    onTouchEnd={() => {
+                      handleSliderRelease();}}
+                    className="mx-4 w-full h-2 appearance-none bg-gray-300 rounded-full slider-thumb"
+                  />
+
+                  {/* Tooltip */}
+                  {showTooltip && (
+                    <div
+                      className="absolute -top-10 px-3 py-1 bg-gray-800/70 text-white text-sm rounded shadow transform -translate-x-1/2 whitespace-nowrap"
+                      style={{ left: tooltipPos }}
+                    >
+                      {(() => {
+                        const cash = 0.80 - 4 * liveRisk/100;                    
+                        const equity = 1 - cash;
+                        return `Equity: ${(equity * 100).toFixed(0)}% • Cash: ${(cash * 100).toFixed(0)}%`;
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                <span className="text-gray-600 text-lg whitespace-nowrap">Aggressive</span>
               </div>
             </div>
 
