@@ -8,7 +8,7 @@ const ComparisonTable = ({ data }) => {
           <tr>
             <th className="px-4 py-2 font-semibold text-gray-700">Field</th>
             <th className="px-4 py-2 font-semibold text-gray-700">Portfolio</th>
-            <th className="px-4 py-2 font-semibold text-gray-700">S&P 500 Benchmark</th>
+            <th className="px-4 py-2 font-semibold text-gray-700">Composite Benchmark</th>
           </tr>
         </thead>
         <tbody>

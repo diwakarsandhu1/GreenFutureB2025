@@ -54,6 +54,18 @@ const CustomLegend = () => (
   </div>
 );
 
+// --------------------------
+// SCALING FIX HERE
+// --------------------------
+const scaleBands = (bands, factor = 100) => ({
+  p5:  bands.p5.map(v => v * factor),
+  p25: bands.p25.map(v => v * factor),
+  p50: bands.p50.map(v => v * factor),
+  p75: bands.p75.map(v => v * factor),
+  p95: bands.p95.map(v => v * factor)
+});
+
+// smoothing helpers
 const smoothSeries = (arr, window = 5) => {
   if (!arr) return arr;
   const n = arr.length;
@@ -97,7 +109,18 @@ const MonteCarloChart = ({ dates, pctBandsPortfolio, pctBandsSPY }) => {
     [pctBandsSPY]
   );
 
+  // --------------------------
+  // APPLY SCALE TO 100 HERE
+  // --------------------------
+  const scaledPortfolio = smoothedPortfolioBands
+    ? scaleBands(smoothedPortfolioBands, 100)
+    : null;
 
+  const scaledSPY = smoothedSPYBands
+    ? scaleBands(smoothedSPYBands, 100)
+    : null;
+
+  // visual settings
   const borderWidth = 2;
   const pointRadius = 0;
   const pointHoverRadius = 2;
@@ -161,15 +184,14 @@ const MonteCarloChart = ({ dates, pctBandsPortfolio, pctBandsSPY }) => {
   const datasets = useMemo(() => {
     let d = [];
 
-    if (showSPY && smoothedSPYBands)
-      d = d.concat(buildBands(smoothedSPYBands, "#1b3a70", "S&P 500"));
+    if (showSPY && scaledSPY)
+      d = d.concat(buildBands(scaledSPY, "#1b3a70", "S&P 500"));
 
-    if (showPortfolio && smoothedPortfolioBands)
-      d = d.concat(buildBands(smoothedPortfolioBands, "#84c225", "Portfolio"));
+    if (showPortfolio && scaledPortfolio)
+      d = d.concat(buildBands(scaledPortfolio, "#84c225", "Portfolio"));
 
     return d;
-  }, [showPortfolio, showSPY, smoothedPortfolioBands, smoothedSPYBands]);
-
+  }, [showPortfolio, showSPY, scaledPortfolio, scaledSPY]);
 
   const data = { labels: dates, datasets };
 
@@ -197,16 +219,10 @@ const MonteCarloChart = ({ dates, pctBandsPortfolio, pctBandsSPY }) => {
 
             const i = ctx.dataIndex;
 
-            const p50 = p.p50[i].toFixed(3);
-            const p25 = p.p25[i].toFixed(3);
-            const p75 = p.p75[i].toFixed(3);
-            const p5  = p.p5[i].toFixed(3);
-            const p95 = p.p95[i].toFixed(3);
-
             return [
-              `${key} Median: ${p50}`,
-              `${key} 25th–75th Percentile: ${p25} – ${p75}`,
-              `${key} 5th–95th Percentile: ${p5} – ${p95}`
+              `${key} Median: ${(p.p50[i] * 100).toFixed(2)}`,
+              `${key} 25th–75th: ${(p.p25[i] * 100).toFixed(2)} – ${(p.p75[i] * 100).toFixed(2)}`,
+              `${key} 5th–95th: ${(p.p5[i] * 100).toFixed(2)} – ${(p.p95[i] * 100).toFixed(2)}`
             ];
           },
 
@@ -244,7 +260,7 @@ const MonteCarloChart = ({ dates, pctBandsPortfolio, pctBandsSPY }) => {
         }
       },
       y: {
-        title: { display: true, text: "Growth (%)" },
+        title: { display: true, text: "Growth of 100%" },
         beginAtZero: false
       }
     },
