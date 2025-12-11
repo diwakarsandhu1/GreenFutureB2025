@@ -1,2 +1,2 @@
 # GFWM
-MQP project completed in B term 2024 at WPI.
+MQP project completed in B term 2025 at WPI.
