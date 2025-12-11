@@ -20,24 +20,29 @@ jobs:
         with:
           node-version: 18
           cache: npm
+          cache-dependency-path: gfwm-app/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+        working-directory: gfwm-app
 
       - name: Build frontend
         run: npm run build
+        working-directory: gfwm-app
 
       - name: Build Electron (macOS)
         run: npm run electron:build -- --mac
+        working-directory: gfwm-app
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
           path: |
-            dist/*.dmg
-            dist/*.zip
-            dist/*.app
+            gfwm-app/dist/*.dmg
+            gfwm-app/dist/*.zip
+            gfwm-app/dist/*.app
+
 
   build-windows:
     name: Build Windows App
@@ -52,19 +57,23 @@ jobs:
         with:
           node-version: 18
           cache: npm
+          cache-dependency-path: gfwm-app/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+        working-directory: gfwm-app
 
       - name: Build frontend
         run: npm run build
+        working-directory: gfwm-app
 
       - name: Build Electron (Windows)
         run: npm run electron:build -- --win
+        working-directory: gfwm-app
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
           path: |
-            dist/*.exe
+            gfwm-app/dist/*.exe
