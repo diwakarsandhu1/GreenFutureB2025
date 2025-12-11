@@ -32,11 +32,12 @@
   },
   "scripts": {
     "dev": "concurrently \"vite\" \"python3 manage.py runserver\" \"wait-on http://localhost:3000 && npm run electron-start\"",
-    "build": "vite build  && npx electron-builder",
+    "build": "vite build",
+    "electron-start": "electron .",
+    "electron:build": "electron-builder",
     "start": "gunicorn myproject.wsgi:application --log-file -",
     "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "electron-start": "electron ."
+    "eject": "react-scripts eject"
   },
   "eslintConfig": {
     "extends": [
