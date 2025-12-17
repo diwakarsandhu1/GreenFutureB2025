@@ -87,7 +87,7 @@ const MonteCarlo = ({ portfolio, riskAppetite, portfolio_weighing_scheme }) => {
 
         // API Request
         try {
-            const res = await fetch(`http://${import.meta.env.VITE_API_DOMAIN}/simulate/`, {
+            const res = await fetch(`${import.meta.env.VITE_API_DOMAIN}/simulate/`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(simData),

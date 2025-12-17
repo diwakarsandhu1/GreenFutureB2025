@@ -151,7 +151,7 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
         });
 
         // Send the necessary data to the server
-        fetch(`http://${import.meta.env.VITE_API_DOMAIN}/updateRisk/`, {
+        fetch(`${import.meta.env.VITE_API_DOMAIN}/updateRisk/`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -511,7 +511,7 @@ const RankingFormResults = ({ serverResponse, formResults }) => {
     });
 
     // Send the necessary data to the server
-    fetch(`http://${import.meta.env.VITE_API_DOMAIN}/updateWeights/`, {
+    fetch(`${import.meta.env.VITE_API_DOMAIN}/updateWeights/`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
