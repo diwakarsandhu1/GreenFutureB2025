@@ -29,6 +29,8 @@ SECRET_KEY = 'i6mele*&fgbf_m3%15qeopv(gsux0(u+v(@o!%x73g7eaw##40'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 ALLOWED_HOSTS = [
     'localhost',
     VITE_API_DOMAIN,
