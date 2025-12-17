@@ -25,5 +25,8 @@ tzdata==2024.2
 whitenoise==6.7.0
 scikit-learn==1.5.2
 matplotlib==3.8.4
-tensorflow-macos==2.15.0
-tensorflow-metal==1.1.0
+tensorflow==2.15.0
+
+# for mac local development
+#tensorflow-macos==2.15.0
+#tensorflow-metal==1.1.0
