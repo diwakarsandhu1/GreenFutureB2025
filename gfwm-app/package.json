@@ -35,7 +35,7 @@
     "build": "vite build",
     "electron-start": "electron .",
     "electron:build": "electron-builder",
-    "start": "gunicorn myproject.wsgi:application --log-file -",
+    "start": "gunicorn myproject.wsgi:application --workers 3 --threads 2 --timeout 120",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
