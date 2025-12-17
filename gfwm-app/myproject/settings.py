@@ -34,7 +34,8 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 ALLOWED_HOSTS = [
     'localhost',
     VITE_API_DOMAIN,
-    '127.0.0.1'
+    '127.0.0.1',
+    'gfwm-fycb.onrender.com'
 ]
 
 
